@@ -247,6 +247,104 @@ function arma(articulos: Record<string, any>[]) {
   return { lineas, cuenta: { ...cuenta, servicios: servicios.length }, porTipo, servicios };
 }
 
+// ---------- los clientes (tiendas) de QuickBooks ----------
+// Manuel mantiene telefonos y direcciones en QuickBooks: de ahi bajan solos.
+// Se empareja por qb_id (el Id del Customer), nunca por nombre: dos tiendas
+// pueden llamarse igual. El codigo del link se hace UNA vez y no se cambia,
+// para que el link de la tienda siga sirviendo. Lo que QuickBooks ya no trae
+// activo se APAGA, no se borra. Las tiendas dadas de alta a mano en el panel
+// (sin qb_id) no se tocan.
+const RUTA_DE: Record<string, string> = { UT: "Utah", CO: "Colorado", ID: "Idaho" };
+
+async function traeClientes(token: string, realm: string) {
+  const todos: Record<string, any>[] = [];
+  let desde = 1;
+  for (let vueltas = 0; vueltas < 40; vueltas++) {
+    const q = `select * from Customer where Active = true startposition ${desde} maxresults 1000`;
+    const r = await fetch(
+      `${API_BASE}/v3/company/${realm}/query?query=${encodeURIComponent(q)}`,
+      { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } },
+    );
+    const t = await r.text();
+    if (!r.ok) throw new Error(`QuickBooks respondio ${r.status} al pedir los clientes: ${t.slice(0, 300)}`);
+    const tanda = JSON.parse(t)?.QueryResponse?.Customer ?? [];
+    todos.push(...tanda);
+    if (tanda.length < 1000) break;
+    desde += 1000;
+  }
+  return todos;
+}
+
+function codigoDeTienda(nombre: string, qbId: string) {
+  const base = norm(nombre).replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24).replace(/-+$/, "");
+  return `${base || "tienda"}-${qbId}`;
+}
+
+function tiendaDeCliente(c: Record<string, any>) {
+  const dir = (c.ShipAddr && (c.ShipAddr.Line1 || c.ShipAddr.City)) ? c.ShipAddr : (c.BillAddr ?? {});
+  const estado = limpia(dir.CountrySubDivisionCode).toUpperCase();
+  const lineas = [dir.Line1, dir.Line2, dir.Line3].map(limpia).filter(Boolean).join(", ");
+  const contacto = [limpia(c.GivenName), limpia(c.FamilyName)].filter(Boolean).join(" ");
+  const nulo = (s: string) => (s ? s : null);
+  return {
+    qb_id: String(c.Id),
+    nombre: limpia(c.DisplayName) || limpia(c.CompanyName) || `Cliente ${c.Id}`,
+    telefono: nulo(limpia(c.PrimaryPhone?.FreeFormNumber) || limpia(c.Mobile?.FreeFormNumber)),
+    direccion: nulo(lineas),
+    ciudad: nulo(limpia(dir.City)),
+    estado: nulo(estado),
+    ruta: RUTA_DE[estado] ?? nulo(estado),
+    contacto: nulo(contacto),
+  };
+}
+
+const CAMPOS_TIENDA = ["nombre", "telefono", "direccion", "ciudad", "estado", "ruta", "contacto"] as const;
+
+async function planClientes(token: string, realm: string) {
+  const clientes = await traeClientes(token, realm);
+  const vienen = clientes.map(tiendaDeCliente);
+  const yaHay = await base("gd_tiendas?select=id,codigo,qb_id,activo," + CAMPOS_TIENDA.join(",") +
+                           "&qb_id=not.is.null&limit=10000") ?? [];
+  const porQb = new Map<string, Record<string, any>>();
+  for (const t of yaHay) porQb.set(String(t.qb_id), t);
+
+  const nuevas: Record<string, any>[] = [];
+  const cambian: { id: string; campos: Record<string, any> }[] = [];
+  let iguales = 0, revividas = 0;
+  const llegan = new Set<string>();
+  for (const v of vienen) {
+    llegan.add(v.qb_id);
+    const t = porQb.get(v.qb_id);
+    if (!t) { nuevas.push({ ...v, codigo: codigoDeTienda(v.nombre, v.qb_id) }); continue; }
+    const campos: Record<string, any> = {};
+    for (const k of CAMPOS_TIENDA) if ((t[k] ?? null) !== (v[k] ?? null)) campos[k] = v[k];
+    if (!t.activo) { campos.activo = true; revividas++; }
+    if (Object.keys(campos).length) cambian.push({ id: t.id, campos });
+    else iguales++;
+  }
+  const seApagan = yaHay.filter((t: Record<string, any>) => t.activo && !llegan.has(String(t.qb_id)));
+
+  const porRuta: Record<string, number> = {};
+  for (const v of vienen) porRuta[v.ruta ?? "Sin estado"] = (porRuta[v.ruta ?? "Sin estado"] ?? 0) + 1;
+
+  return {
+    resumen: {
+      en_quickbooks: vienen.length,
+      nuevas: nuevas.length,
+      se_actualizan: cambian.length,
+      iguales,
+      se_vuelven_a_prender: revividas,
+      se_apagan: seApagan.length,
+      sin_telefono: vienen.filter((v) => !v.telefono).length,
+      sin_direccion: vienen.filter((v) => !v.direccion).length,
+      por_ruta: porRuta,
+    },
+    nuevas,
+    cambian,
+    seApagan,
+  };
+}
+
 // ---------- las fotos de QuickBooks ----------
 // En QuickBooks la foto de un articulo es un "Attachable" amarrado al Item.
 // Decision de Manuel (22 oct 2026): si el articulo tiene foto en QuickBooks,
@@ -664,6 +762,42 @@ Deno.serve(async (req) => {
         }
       }
       return json({ ok: true, de_verdad: true, hechas, fallas, quedan: cola.length - lote.length, resumen: plan.resumen });
+    }
+
+    // --- los clientes: primero el ensayo, luego de una vez ---
+    if (accion === "clientes") {
+      if (faltanSecretos()) {
+        return json({ ok: false, error: "Faltan los secretos QB_CLIENT_ID y QB_CLIENT_SECRET en Supabase." }, 400);
+      }
+      const deVerdad = cuerpo.de_verdad === true;
+      const acceso = await accesoFresco();
+      const plan = await planClientes(acceso.token, acceso.realm);
+      if (!deVerdad) return json({ ok: true, de_verdad: false, resumen: plan.resumen });
+
+      // El mismo freno que el catalogo: si se apagaria casi todo, algo esta mal conectado.
+      const tocadas = plan.cambian.length + plan.seApagan.length;
+      if (tocadas > 0 && plan.seApagan.length / tocadas > 0.8 && cuerpo.forzar !== true) {
+        return json({
+          ok: false,
+          resumen: plan.resumen,
+          error: `Me freno: se apagarian ${plan.seApagan.length} tiendas. ` +
+                 `QuickBooks solo mando ${plan.resumen.en_quickbooks} clientes. Revisa la empresa conectada.`,
+        }, 400);
+      }
+
+      for (let i = 0; i < plan.nuevas.length; i += 200) {
+        await base("gd_tiendas", { method: "POST", body: JSON.stringify(plan.nuevas.slice(i, i + 200)) });
+      }
+      for (const c of plan.cambian) {
+        await base(`gd_tiendas?id=eq.${c.id}`, { method: "PATCH", body: JSON.stringify(c.campos) });
+      }
+      for (const t of plan.seApagan) {
+        await base(`gd_tiendas?id=eq.${t.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ activo: false }),
+        });
+      }
+      return json({ ok: true, de_verdad: true, resumen: plan.resumen });
     }
 
     return json({ ok: false, error: `No conozco la accion "${accion}".` }, 400);

@@ -767,6 +767,8 @@ function qbApiEstado(){
            'Traer de QuickBooks y revisar sin cambiar nada</button>' +
            '<button class="mini" id="bQbFotos" style="margin-top:7px">' +
            'Fotos de QuickBooks: revisar sin cambiar nada</button>' +
+           '<button class="mini" id="bQbClientes" style="margin-top:7px">' +
+           'Tiendas (clientes) de QuickBooks: revisar sin cambiar nada</button>' +
            '<button class="mini" id="bQbDesconectar" style="margin-top:7px;color:#b91c1c;' +
            'border-color:#f0c8c8">Desconectar de QuickBooks</button>';
     }
@@ -774,6 +776,7 @@ function qbApiEstado(){
     if($('bQbConectar'))    $('bQbConectar').onclick    = qbApiConectar;
     if($('bQbApiVer'))      $('bQbApiVer').onclick      = function(){ qbApiRefresca(false); };
     if($('bQbFotos'))       $('bQbFotos').onclick       = qbFotosRevisa;
+    if($('bQbClientes'))    $('bQbClientes').onclick    = function(){ qbClientes(false); };
     if($('bQbDesconectar')) $('bQbDesconectar').onclick = qbApiDesconecta;
   });
 }
@@ -818,6 +821,48 @@ function qbApiRefresca(deVerdad){
     qbTabla(d.resumen, !deVerdad);
     $('bQbApiVer').disabled = false;
     if(deVerdad) cargaProductos();
+  });
+}
+
+/* ---- las tiendas (clientes) de QuickBooks ----
+   Bajan nombre, telefono, direccion, ciudad y estado. La ruta sale del estado
+   (UT, CO, ID). Se emparejan por el Id del cliente en QuickBooks, no por el
+   nombre. El codigo del link se hace una vez y ya no cambia. */
+function qbClientes(deVerdad){
+  var b = $('bQbClientes');
+  if(b) b.disabled = true;
+  QBAPIUSADA = true;
+  aviso('mQbApi', deVerdad ? 'Bajando las tiendas de QuickBooks&hellip;'
+                           : 'Revisando los clientes de QuickBooks&hellip; tarda unos segundos.', true);
+  qbApiLlama({accion:'clientes', de_verdad:deVerdad}, function(d){
+    var r = d.resumen, h = '<div class="top" style="margin-top:11px">', k;
+    function fila(a, v, fuerte){
+      h += '<div class="ln"><div class="a">' + a + '</div><div class="b"' +
+           (fuerte ? ' style="color:#991b1b;font-weight:700"' : '') + '>' + v + '</div></div>';
+    }
+    if(b) b.disabled = false;
+    fila('Clientes activos en QuickBooks', r.en_quickbooks);
+    fila('Se agregan (nuevas)', r.nuevas);
+    fila('Se actualizan (cambi&oacute; tel&eacute;fono, direcci&oacute;n&hellip;)', r.se_actualizan);
+    fila('Ya est&aacute;n iguales', r.iguales);
+    if(r.se_vuelven_a_prender > 0) fila('Se vuelven a prender', r.se_vuelven_a_prender);
+    fila('<b>Se apagan</b> (ya no est&aacute;n activas en QuickBooks)', r.se_apagan, r.se_apagan > 0);
+    fila('Sin tel&eacute;fono en QuickBooks', r.sin_telefono);
+    fila('Sin direcci&oacute;n en QuickBooks', r.sin_direccion);
+    for(k in r.por_ruta) if(r.por_ruta.hasOwnProperty(k)) fila('&nbsp;&nbsp;&middot; ' + k, r.por_ruta[k]);
+    h += '</div>';
+    if(!deVerdad && (r.nuevas + r.se_actualizan + r.se_apagan + r.se_vuelven_a_prender) > 0){
+      h += '<button class="mini p" id="bQbClientesPon" style="margin-top:9px">Aplicar: agregar ' +
+           r.nuevas + ', actualizar ' + r.se_actualizan + ', apagar ' + r.se_apagan + '</button>';
+    }
+    $('qbApiRes').innerHTML = h;
+    aviso('mQbApi', deVerdad ? 'Listo, las tiendas ya est&aacute;n en la app.'
+                             : 'Esto es lo que <b>pasar&iacute;a</b>; no se toc&oacute; nada.', true);
+    if($('bQbClientesPon')) $('bQbClientesPon').onclick = function(){
+      this.disabled = true;
+      qbClientes(true);
+    };
+    if(deVerdad) cargaTiendas();
   });
 }
 
