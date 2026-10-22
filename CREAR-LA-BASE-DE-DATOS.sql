@@ -720,7 +720,7 @@ begin
 
   get diagnostics v_n = row_count;
   return v_n;
-end $function$
+end $function$;
 
 -- --------------------------------------------------------------------------
 --  Aplicar el refresh (la version final)
@@ -835,7 +835,7 @@ begin
    where not exists (select 1 from par where par.llave = q.llave and par.nnom = q.nnom);
 
   return v_res;
-end $function$
+end $function$;
 
 -- --------------------------------------------------------------------------
 --  Quien puede llamar al refresh
