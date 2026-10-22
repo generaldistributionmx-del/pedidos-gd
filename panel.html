@@ -765,12 +765,15 @@ function qbApiEstado(){
       }
       h += '<button class="mini" id="bQbApiVer" style="margin-top:9px">' +
            'Traer de QuickBooks y revisar sin cambiar nada</button>' +
+           '<button class="mini" id="bQbFotos" style="margin-top:7px">' +
+           'Fotos de QuickBooks: revisar sin cambiar nada</button>' +
            '<button class="mini" id="bQbDesconectar" style="margin-top:7px;color:#b91c1c;' +
            'border-color:#f0c8c8">Desconectar de QuickBooks</button>';
     }
     $('qbApiEstado').innerHTML = h;
     if($('bQbConectar'))    $('bQbConectar').onclick    = qbApiConectar;
     if($('bQbApiVer'))      $('bQbApiVer').onclick      = function(){ qbApiRefresca(false); };
+    if($('bQbFotos'))       $('bQbFotos').onclick       = qbFotosRevisa;
     if($('bQbDesconectar')) $('bQbDesconectar').onclick = qbApiDesconecta;
   });
 }
@@ -815,6 +818,74 @@ function qbApiRefresca(deVerdad){
     qbTabla(d.resumen, !deVerdad);
     $('bQbApiVer').disabled = false;
     if(deVerdad) cargaProductos();
+  });
+}
+
+/* ---- las fotos de QuickBooks ----
+   Igual que el catalogo: primero se revisa sin tocar nada y se dice cuantas
+   se agregan y cuantas se reemplazan (gana la de QuickBooks). Al aplicar se
+   mandan de 15 en 15: cada una se baja de QuickBooks y se sube al deposito,
+   y una sola llamada con todas se pasaria del tiempo. */
+var QBFOTOS = {hechas:0, fallas:[], saltar:[]};
+
+function qbFotosRevisa(){
+  var b = $('bQbFotos');
+  if(b) b.disabled = true;
+  QBAPIUSADA = true;
+  aviso('mQbApi', 'Buscando las fotos en QuickBooks&hellip; tarda unos segundos.', true);
+  qbApiLlama({accion:'fotos', de_verdad:false}, function(d){
+    var r = d.resumen, h = '<div class="top" style="margin-top:11px">';
+    function fila(a, v, fuerte){
+      h += '<div class="ln"><div class="a">' + a + '</div><div class="b"' +
+           (fuerte ? ' style="color:#991b1b;font-weight:700"' : '') + '>' + v + '</div></div>';
+    }
+    if(b) b.disabled = false;
+    fila('Productos con foto en QuickBooks', r.con_foto_en_quickbooks);
+    fila('Ya est&aacute;n iguales en la app', r.iguales);
+    fila('Se agregan (no ten&iacute;an foto)', r.nuevas);
+    fila('<b>Se reemplazan</b> (gana la de QuickBooks)', r.reemplazan, r.reemplazan > 0);
+    if(r.sin_producto > 0)
+      fila('Fotos de art&iacute;culos que no est&aacute;n en el cat&aacute;logo', r.sin_producto);
+    h += '</div>';
+    if(r.pendientes > 0){
+      h += '<button class="mini p" id="bQbFotosPon" style="margin-top:9px">Poner las ' +
+           r.pendientes + ' fotos</button>';
+    }
+    $('qbApiRes').innerHTML = h;
+    aviso('mQbApi', r.pendientes > 0
+      ? 'Esto es lo que <b>pasar&iacute;a</b>; no se toc&oacute; nada.'
+      : 'Las fotos de QuickBooks ya est&aacute;n al d&iacute;a en la app.', true);
+    if($('bQbFotosPon')) $('bQbFotosPon').onclick = function(){
+      this.disabled = true;
+      QBFOTOS = {hechas:0, fallas:[], saltar:[]};
+      qbFotosTanda();
+    };
+  });
+}
+
+function qbFotosTanda(){
+  qbApiLlama({accion:'fotos', de_verdad:true, saltar:QBFOTOS.saltar}, function(d){
+    var i, h;
+    QBFOTOS.hechas += d.hechas;
+    for(i = 0; i < d.fallas.length; i++){
+      QBFOTOS.fallas.push(d.fallas[i]);
+      QBFOTOS.saltar.push(d.fallas[i].id);
+    }
+    if(d.quedan > 0){
+      aviso('mQbApi', 'Poniendo fotos&hellip; van <b>' + QBFOTOS.hechas + '</b>, faltan ' +
+            d.quedan + '. No cierres esta pesta&ntilde;a.', true);
+      qbFotosTanda();
+      return;
+    }
+    h = 'Listo: se pusieron <b>' + QBFOTOS.hechas + '</b> fotos de QuickBooks.';
+    if(QBFOTOS.fallas.length){
+      h += '<br>No se pudieron <b>' + QBFOTOS.fallas.length + '</b>:';
+      for(i = 0; i < QBFOTOS.fallas.length; i++)
+        h += '<br>&middot; ' + QBFOTOS.fallas[i].nombre + ' &mdash; ' + QBFOTOS.fallas[i].error;
+    }
+    aviso('mQbApi', h, QBFOTOS.fallas.length === 0);
+    $('qbApiRes').innerHTML = '';
+    cargaProductos();
   });
 }
 
@@ -936,6 +1007,8 @@ function qbTabla(r, falta){
     fila('Con el <b>nombre</b> en el campo del c&oacute;digo', QBCUENTA.nombre);
     fila('Sin nada en el campo del c&oacute;digo', QBCUENTA.vacio);
     if(QBCUENTA.raro) fila('Con algo que no sirve de c&oacute;digo', QBCUENTA.raro);
+    if(QBCUENTA.servicios)
+      fila('Conceptos de servicio (Flete, Sales&hellip;) que no van a la app', QBCUENTA.servicios);
   }
   h += '</div>';
   if(falta){

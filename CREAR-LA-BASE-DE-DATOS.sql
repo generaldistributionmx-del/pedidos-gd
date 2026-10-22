@@ -850,6 +850,10 @@ grant execute on function public.gd_qb_aplicar(boolean) to authenticated;
 -- --------------------------------------------------------------------------
 --  Las fotos que toma el equipo
 -- --------------------------------------------------------------------------
+-- Cual foto de QuickBooks se puso (Attachable Id:SyncToken). Con esto la
+-- siguiente pasada de fotos sabe que ya esta al dia y no la vuelve a subir.
+alter table public.gd_productos add column if not exists foto_qb text;
+
 -- Donde viven las fotos que toma el equipo con el celular.
 -- Publico para LEER: la app de pedidos no tiene sesion, tiene que poder verlas.
 -- Para ESCRIBIR, solo el equipo activo.

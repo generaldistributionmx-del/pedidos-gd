@@ -210,10 +210,19 @@ function arma(articulos: Record<string, any>[]) {
   const cuenta = { total: 0, codigo: 0, nombre: 0, vacio: 0, raro: 0, categorias: cats.size };
   const porTipo: Record<string, number> = {};
 
+  const servicios: string[] = [];
   for (const a of articulos) {
     if (a.Type === "Category") continue;
     const nom = limpia(a.Name);
     if (!nom) continue;
+    // Los conceptos de servicio (Flete, Sales...) sirven para facturar en
+    // QuickBooks, no son mercancia: no van al catalogo de la app. Manuel
+    // lo pidio el 22 de octubre de 2026. Se cuentan para que el ensayo lo diga.
+    if (a.Type === "Service") {
+      servicios.push(nom);
+      porTipo.Service = (porTipo.Service ?? 0) + 1;
+      continue;
+    }
     const sku = limpia(a.Sku);
     const cod = codigoDeBarras(sku, nom);
 
@@ -235,7 +244,154 @@ function arma(articulos: Record<string, any>[]) {
       String(Math.round(Number(a.QtyOnHand ?? 0))),
     ].join("|"));
   }
-  return { lineas, cuenta, porTipo };
+  return { lineas, cuenta: { ...cuenta, servicios: servicios.length }, porTipo, servicios };
+}
+
+// ---------- las fotos de QuickBooks ----------
+// En QuickBooks la foto de un articulo es un "Attachable" amarrado al Item.
+// Decision de Manuel (22 oct 2026): si el articulo tiene foto en QuickBooks,
+// GANA esa, aunque el producto ya tenga una de la camara o de Shopify. Si no
+// tiene, se respeta la que ya esta. Las fotos de QuickBooks viven aparte, en
+// gd-fotos/qb/<id>, y foto_qb guarda cual se puso: asi la segunda pasada sabe
+// que ya esta al dia y no la vuelve a subir.
+const FOTO_MAX = 5 * 1024 * 1024;   // el mismo limite que el deposito gd-fotos
+const LOTE_FOTOS = 15;              // fotos por llamada: cada una se baja y se sube
+const EXT: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
+
+// La misma cuenta que gd_norm() en la base: sin acentos, minusculas, un espacio.
+function norm(t: string) {
+  const de = "áéíóúàèìòùäëïöüâêîôûñ", a = "aeiouaeiouaeiouaeioun";
+  let s = "";
+  for (const ch of String(t ?? "").toLowerCase()) {
+    const i = de.indexOf(ch);
+    s += i >= 0 ? a[i] : ch;
+  }
+  return s.replace(/\s+/g, " ");
+}
+
+async function traeAdjuntos(token: string, realm: string) {
+  const todos: Record<string, any>[] = [];
+  // Primero se le pide a QuickBooks solo los de articulos; si no acepta el
+  // filtro, se piden todos y se filtran aqui.
+  let filtro = " where AttachableRef.EntityRef.Type = 'Item'";
+  let desde = 1;
+  for (let vueltas = 0; vueltas < 40; vueltas++) {
+    const q = `select * from Attachable${filtro} startposition ${desde} maxresults 1000`;
+    const r = await fetch(
+      `${API_BASE}/v3/company/${realm}/query?query=${encodeURIComponent(q)}`,
+      { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } },
+    );
+    const t = await r.text();
+    if (!r.ok) {
+      if (filtro && desde === 1) { filtro = ""; continue; }
+      throw new Error(`QuickBooks respondio ${r.status} al pedir las fotos: ${t.slice(0, 300)}`);
+    }
+    const tanda = JSON.parse(t)?.QueryResponse?.Attachable ?? [];
+    todos.push(...tanda);
+    if (tanda.length < 1000) break;
+    desde += 1000;
+  }
+  return todos;
+}
+
+async function planFotos(token: string, realm: string) {
+  const articulos = await traeArticulos(token, realm) as Record<string, any>[];
+  const nombreDeItem = new Map<string, string>();
+  for (const a of articulos) {
+    if (a.Type === "Category" || a.Type === "Service") continue;
+    nombreDeItem.set(String(a.Id), limpia(a.Name));
+  }
+
+  // La foto mas reciente de cada articulo.
+  const adjuntos = await traeAdjuntos(token, realm);
+  const fotoDeItem = new Map<string, Record<string, any>>();
+  for (const at of adjuntos) {
+    if (!String(at.ContentType ?? "").toLowerCase().startsWith("image/")) continue;
+    for (const ref of at.AttachableRef ?? []) {
+      const e = ref?.EntityRef;
+      if (!e || String(e.type ?? e.Type ?? "").toLowerCase() !== "item") continue;
+      const id = String(e.value);
+      const ya = fotoDeItem.get(id);
+      if (!ya || String(at.MetaData?.LastUpdatedTime ?? "") > String(ya.MetaData?.LastUpdatedTime ?? "")) {
+        fotoDeItem.set(id, at);
+      }
+    }
+  }
+
+  const productos = await base("gd_productos?select=id,nombre,foto,foto_qb&activo=is.true&limit=5000");
+  const porNombre = new Map<string, Record<string, any>>();
+  for (const p of productos ?? []) porNombre.set(norm(p.nombre), p);
+
+  let iguales = 0, nuevas = 0, reemplazan = 0, sinProducto = 0;
+  const sinProductoNombres: string[] = [];
+  const pendientes: { prod: Record<string, any>; at: Record<string, any>; llave: string; nombre: string }[] = [];
+  for (const [itemId, at] of fotoDeItem) {
+    const nom = nombreDeItem.get(itemId);
+    const p = nom ? porNombre.get(norm(nom)) : undefined;
+    if (!p) {
+      sinProducto++;
+      if (nom) sinProductoNombres.push(nom);
+      continue;
+    }
+    const llave = `${at.Id}:${at.SyncToken ?? ""}`;
+    const esLaDeQb = String(p.foto ?? "").includes(`/gd-fotos/qb/${p.id}.`);
+    if (p.foto_qb === llave && esLaDeQb) { iguales++; continue; }
+    if (p.foto) reemplazan++; else nuevas++;
+    pendientes.push({ prod: p, at, llave, nombre: String(p.nombre) });
+  }
+  pendientes.sort((x, y) => x.nombre.localeCompare(y.nombre));
+
+  return {
+    resumen: {
+      con_foto_en_quickbooks: fotoDeItem.size,
+      iguales,
+      nuevas,
+      reemplazan,
+      sin_producto: sinProducto,
+      sin_producto_nombres: sinProductoNombres.slice(0, 20),
+      pendientes: pendientes.length,
+    },
+    pendientes,
+  };
+}
+
+async function ponFoto(token: string, realm: string, x: { prod: Record<string, any>; at: Record<string, any>; llave: string }) {
+  let liga = String(x.at.TempDownloadUri ?? "");
+  if (!liga) {
+    const r = await fetch(`${API_BASE}/v3/company/${realm}/download/${x.at.Id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!r.ok) throw new Error(`QuickBooks no dio la liga de la foto (${r.status})`);
+    liga = (await r.text()).trim();
+  }
+  const r = await fetch(liga);
+  if (!r.ok) throw new Error(`no se pudo bajar de QuickBooks (${r.status})`);
+  const bytes = new Uint8Array(await r.arrayBuffer());
+  let tipo = String(r.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+  if (!EXT[tipo]) tipo = String(x.at.ContentType ?? "").toLowerCase();
+  if (tipo === "image/jpg") tipo = "image/jpeg";
+  if (!EXT[tipo]) throw new Error(`es ${tipo || "un archivo raro"}; solo se aceptan JPG, PNG o WEBP`);
+  if (bytes.length > FOTO_MAX) throw new Error(`pesa ${(bytes.length / 1048576).toFixed(1)} MB (el maximo es 5)`);
+
+  const ruta = `qb/${x.prod.id}.${EXT[tipo]}`;
+  const s = await fetch(`${SB_URL}/storage/v1/object/gd-fotos/${ruta}`, {
+    method: "POST",
+    headers: {
+      apikey: SB_SERV,
+      Authorization: `Bearer ${SB_SERV}`,
+      "Content-Type": tipo,
+      "x-upsert": "true",
+    },
+    body: bytes,
+  });
+  if (!s.ok) throw new Error(`no se pudo guardar (${s.status}): ${(await s.text()).slice(0, 150)}`);
+
+  // El ?v= obliga al telefono a pedir la nueva y no la que ya tenia guardada.
+  const url = `${SB_URL}/storage/v1/object/public/gd-fotos/${ruta}?v=${Date.now()}`;
+  await base(`gd_productos?id=eq.${x.prod.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ foto: url, foto_qb: x.llave }),
+  });
 }
 
 // ---------- las funciones de la base, con la sesion de quien llamo ----------
@@ -428,7 +584,7 @@ Deno.serve(async (req) => {
       }
 
       const articulos = await traeArticulos(acceso.token, acceso.realm);
-      const { lineas, cuenta, porTipo } = arma(articulos);
+      const { lineas, cuenta, porTipo, servicios } = arma(articulos);
 
       if (!lineas.length) {
         return json({
@@ -478,8 +634,36 @@ Deno.serve(async (req) => {
         productos: lineas.length,
         cuenta,
         por_tipo: porTipo,
+        servicios,
         resumen,
       });
+    }
+
+    // --- las fotos: primero el ensayo, despues de a poquito ---
+    if (accion === "fotos") {
+      if (faltanSecretos()) {
+        return json({ ok: false, error: "Faltan los secretos QB_CLIENT_ID y QB_CLIENT_SECRET en Supabase." }, 400);
+      }
+      const deVerdad = cuerpo.de_verdad === true;
+      const acceso = await accesoFresco();
+      const plan = await planFotos(acceso.token, acceso.realm);
+      if (!deVerdad) return json({ ok: true, de_verdad: false, resumen: plan.resumen });
+
+      // Las que ya fallaron en esta misma corrida se saltan, para no ciclarse.
+      const saltar = new Set(Array.isArray(cuerpo.saltar) ? (cuerpo.saltar as unknown[]).map(String) : []);
+      const cola = plan.pendientes.filter((x) => !saltar.has(String(x.prod.id)));
+      const lote = cola.slice(0, LOTE_FOTOS);
+      let hechas = 0;
+      const fallas: { id: string; nombre: string; error: string }[] = [];
+      for (const x of lote) {
+        try {
+          await ponFoto(acceso.token, acceso.realm, x);
+          hechas++;
+        } catch (e) {
+          fallas.push({ id: String(x.prod.id), nombre: x.nombre, error: String(e.message ?? e).slice(0, 200) });
+        }
+      }
+      return json({ ok: true, de_verdad: true, hechas, fallas, quedan: cola.length - lote.length, resumen: plan.resumen });
     }
 
     return json({ ok: false, error: `No conozco la accion "${accion}".` }, 400);
