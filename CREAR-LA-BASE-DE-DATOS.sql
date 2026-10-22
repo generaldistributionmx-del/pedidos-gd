@@ -700,7 +700,7 @@ begin
   end if;
 
   if p_primera then
-    delete from public.gd_qb_import;
+    delete from public.gd_qb_import where true;  -- el WHERE lo exige pg_safeupdate en proyectos nuevos
   end if;
 
   with r as (
