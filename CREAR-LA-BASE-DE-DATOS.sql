@@ -787,7 +787,8 @@ begin
       (select count(*) from public.gd_productos p join par on par.id = p.id where p.precio_fijo),
     'nuevos',        v_nue,
     'revividos',     (select count(*) from public.gd_productos
-                       where not activo and id in (select id from par)),
+                       where not activo and id in (select id from par)
+                         and coalesce(apagado_motivo,'') not like 'Manuel lo pidio%'),
     'se_apagan',     v_apa,
     'se_apagan_con_mercancia',
       (select count(*) from public.gd_productos
@@ -803,6 +804,21 @@ begin
                           or gd_norm(l.producto) = gd_norm(p.nombre)))
   );
 
+  -- INVENTARIO: QuickBooks manda tambien la existencia (QtyOnHand). Lo que
+  -- no cuadra se corrige con un movimiento de ajuste, nunca editando el
+  -- numero: asi queda el rastro de cuanto se movio y cuando.
+  create temp table inv on commit drop as
+    select distinct on (p.id) p.id, q.cantidad - p.existencia as dif
+      from public.gd_productos p
+      join qb q on q.nnom = gd_norm(p.nombre)
+     where p.fusionado_en is null and q.cantidad is not null
+       and q.cantidad <> p.existencia
+     order by p.id, q.cantidad desc;
+  v_res := v_res || jsonb_build_object(
+    'existencias_que_cambian', (select count(*) from inv),
+    'piezas_que_entran',       (select coalesce(sum(dif),0) from inv where dif > 0),
+    'piezas_que_salen',        (select coalesce(-sum(dif),0) from inv where dif < 0));
+
   if not p_de_verdad then
     return v_res || jsonb_build_object('nota','ENSAYO: no se toco nada');
   end if;
@@ -814,10 +830,11 @@ begin
          -- EL CANDADO: si el precio es fijo, QuickBooks no lo toca.
          precio      = case when p.precio_fijo then p.precio
                             else coalesce(par.precio, p.precio) end,
-         activo      = true,
+         -- Lo que Manuel quito a mano de la app NO lo revive el refresh.
+         activo      = (coalesce(p.apagado_motivo, '') not like 'Manuel lo pidio%'),
          origen      = 'quickbooks',
-         apagado_motivo = null,
-         apagado_el     = null,
+         apagado_motivo = case when p.apagado_motivo like 'Manuel lo pidio%' then p.apagado_motivo end,
+         apagado_el     = case when p.apagado_motivo like 'Manuel lo pidio%' then p.apagado_el end,
          actualizado = now()
     from par
    where p.id = par.id;
@@ -833,6 +850,18 @@ begin
   select q.nombre, q.codigo, q.categoria, coalesce(q.precio,0), 0, true, 'quickbooks'
     from qb q
    where not exists (select 1 from par where par.llave = q.llave and par.nnom = q.nnom);
+
+  -- Ya con los nuevos dentro: cuadrar la existencia de todos con QuickBooks.
+  insert into public.gd_inventario_mov (producto_id, tipo, cantidad, motivo, referencia, nota, usuario_id)
+  select x.id, 'ajuste', x.dif, 'quickbooks',
+         'Refresh ' || to_char(now() at time zone 'America/Denver', 'YYYY-MM-DD HH24:MI'),
+         'Cuadre con la existencia de QuickBooks', auth.uid()
+    from (select distinct on (p.id) p.id, q.cantidad - p.existencia as dif
+            from public.gd_productos p
+            join qb q on q.nnom = gd_norm(p.nombre)
+           where p.activo and p.fusionado_en is null and q.cantidad is not null
+             and q.cantidad <> p.existencia
+           order by p.id, q.cantidad desc) x;
 
   return v_res;
 end $function$;

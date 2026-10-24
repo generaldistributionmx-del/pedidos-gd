@@ -1047,6 +1047,11 @@ function qbTabla(r, falta){
     fila('&nbsp;&nbsp;&middot; piezas en bodega que dejan de verse', r.piezas_que_se_apagan, true);
   if(r.se_apagan_ya_pedidos > 0)
     fila('&nbsp;&nbsp;&middot; de esos, ya aparecen en pedidos hechos', r.se_apagan_ya_pedidos, true);
+  if(r.existencias_que_cambian !== undefined){
+    fila('<b>Inventario:</b> productos cuya existencia se cuadra con QuickBooks', r.existencias_que_cambian);
+    fila('&nbsp;&nbsp;&middot; piezas que entran', r.piezas_que_entran);
+    fila('&nbsp;&nbsp;&middot; piezas que salen', r.piezas_que_salen);
+  }
   if(QBCUENTA){
     fila('Con c&oacute;digo de barras de verdad', QBCUENTA.codigo);
     fila('Con el <b>nombre</b> en el campo del c&oacute;digo', QBCUENTA.nombre);
