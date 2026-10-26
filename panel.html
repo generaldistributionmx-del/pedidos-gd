@@ -1119,11 +1119,18 @@ function qbArranca(){
 
 /* ---- productos ---- */
 var PCAT = '', PVER = 'activos', PSINFOTO = false;
+/* Se piden de 100 en 100. Antes eran 60 fijos y sin aviso: la lista se
+   cortaba a la mitad y parecia que no habia mas productos. */
+var PLIM = 100, PMAS = false;
+
+function verMasProd(){ PMAS = true; PLIM += 100; cargaProductos(); }
 
 function cargaProductos(){
+  if(!PMAS) PLIM = 100;
+  PMAS = false;
   var q = $('pq').value.trim();
   var u = SB + '/rest/v1/gd_productos?select=id,nombre,categoria,precio,existencia,foto,upc,activo,precio_fijo' +
-          '&order=nombre.asc&limit=60' +
+          '&order=nombre.asc&limit=' + PLIM +
           (PVER === 'apagados' ? '&activo=eq.false' : '&activo=eq.true') +
           (PSINFOTO ? '&or=(foto.is.null,foto.eq.)' : '');
   if(q){
@@ -1198,7 +1205,13 @@ function pintaProductos(d){
          (p.precio_fijo ? '&#128274; fijo' : '&#128275; libre') + '</button></div>';
     h += '</div>';
   }
+  if(d.length >= PLIM)
+    h += '<div class="vacio" style="padding:18px 20px">Van ' + d.length + '. ' +
+         '<button class="mini p" id="bMasProd">Ver 100 m&aacute;s</button></div>';
+  else if(d.length > 20)
+    h += '<div class="vacio" style="padding:18px 20px">Son todos: ' + d.length + '.</div>';
   $('listaProd').innerHTML = h;
+  if($('bMasProd')) $('bMasProd').onclick = verMasProd;
   amarraCamaras();
   amarraPrecios();
 }
