@@ -866,6 +866,14 @@ document.addEventListener('click', function(e){
 var qEl = document.getElementById('q');
 function onQ(){ if(q !== qEl.value){ q = qEl.value; render(); } }
 qEl.onkeyup = onQ; qEl.oninput = onQ; qEl.onchange = onQ;
+/* El escaner manda Enter al final: se deja el codigo seleccionado para que
+   el siguiente escaneo lo reemplace en vez de pegarse atras. */
+qEl.onkeydown = function(ev){
+  if(ev.keyCode !== 13) return;
+  if(ev.preventDefault) ev.preventDefault();
+  onQ();
+  try { qEl.select(); } catch(e){}
+};
 document.getElementById('bent').onclick = function(){
   if(soyDelEquipo()) salirDeAqui(); else abreEntrar();
 };
