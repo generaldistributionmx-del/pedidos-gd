@@ -358,7 +358,7 @@ function traeCatalogo(){
   var junta = [];
   function tanda(desde){
     var x = new XMLHttpRequest();
-    x.open('GET', SB_URL + '/gd_catalogo?select=id,nombre,categoria,precio,foto' +
+    x.open('GET', SB_URL + '/gd_catalogo?select=id,nombre,categoria,precio,foto,upc' +
                   '&order=nombre.asc&limit=1000&offset=' + desde, true);
     x.setRequestHeader('apikey', SB_KEY);
     x.setRequestHeader('Authorization', 'Bearer ' + SB_KEY);
@@ -371,7 +371,8 @@ function traeCatalogo(){
       var i;
       for(i=0;i<d.length;i++){
         junta.push({ i:d[i].id, t:d[i].nombre, p:(d[i].precio || 0),
-                     c:(d[i].categoria || 'Otros'), f:(d[i].foto || ''), d:1 });
+                     c:(d[i].categoria || 'Otros'), f:(d[i].foto || ''), d:1,
+                     u:(d[i].upc || '') });
       }
       if(d.length === 1000){ tanda(desde + 1000); return; }   /* viene otra tanda */
       if(junta.length){ guardaCatalogo(junta); ponCatalogo(junta); }
@@ -715,10 +716,28 @@ function norm(s){
        .replace(/[\u00fa\u00f9\u00fc\u00fb]/g,'u').replace(/\u00f1/g,'n');
   return s;
 }
+/* Codigo de barras: el escaner escribe solo digitos. Se comparan sin ceros
+   a la izquierda (UPC de 12 = EAN de 13 con un 0 adelante) y aceptando que
+   el escaner mande o no el ultimo digito (el verificador). */
+function soloCodigo(s){ return s.replace(/^0+/, ''); }
+function pegaCodigo(u, c){
+  if(!u) return false;
+  u = soloCodigo(u.replace(/\D/g, ''));
+  if(!u) return false;
+  if(u === c || u.slice(0, -1) === c || c.slice(0, -1) === u) return true;
+  return c.length >= 6 && u.indexOf(c) >= 0;
+}
 function render(){
   var nq = norm(q), out = [], i, p;
+  var qc = q.replace(/\s/g, '');
+  var esCodigo = /^\d{6,}$/.test(qc);
+  if(esCodigo) qc = soloCodigo(qc);
   for(i=0;i<P.length;i++){
     p = P[i];
+    if(esCodigo){                 /* por codigo se busca en todas las categorias */
+      if(!pegaCodigo(p.u, qc) && norm(p.t).indexOf(nq) < 0) continue;
+      out.push(p); continue;
+    }
     if(cat && p.c !== cat) continue;
     if(nq && norm(p.t).indexOf(nq) < 0) continue;
     out.push(p);
