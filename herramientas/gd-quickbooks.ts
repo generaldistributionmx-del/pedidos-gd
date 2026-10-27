@@ -498,6 +498,8 @@ async function ponFoto(token: string, realm: string, x: { prod: Record<string, a
 // En QuickBooks cada invoice ya lleva la ruta y el vendedor en campos propios
 // (CustomField). Aqui se leen los ultimos invoices para saber como se llaman
 // esos campos y que valores se usan: esa es la lista que escoge el vendedor.
+// Los campos "nuevos" de QuickBooks (Sales Rep, Ruta de Manuel) SOLO llegan
+// con include=enhancedAllCustomFields: sin eso, 3,000 invoices salen sin campos.
 function rolDeCampo(nombre: string) {
   const n = norm(nombre);
   if (/\bruta\b|route/.test(n)) return "ruta";
@@ -511,7 +513,7 @@ async function planCampos(token: string, realm: string) {
   for (let vueltas = 0; vueltas < 3; vueltas++) {
     const q = `select * from Invoice orderby MetaData.CreateTime desc startposition ${desde} maxresults 1000`;
     const r = await fetch(
-      `${API_BASE}/v3/company/${realm}/query?query=${encodeURIComponent(q)}&minorversion=75`,
+      `${API_BASE}/v3/company/${realm}/query?query=${encodeURIComponent(q)}&minorversion=75&include=enhancedAllCustomFields`,
       { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } },
     );
     const t = await r.text();
@@ -648,7 +650,7 @@ async function creaInvoice(token: string, realm: string, plan: Awaited<ReturnTyp
       SalesItemLineDetail: { ItemRef: { value: l.item_id }, Qty: l.cantidad, UnitPrice: l.precio },
     })),
   };
-  const r = await fetch(`${API_BASE}/v3/company/${realm}/invoice?minorversion=73`, {
+  const r = await fetch(`${API_BASE}/v3/company/${realm}/invoice?minorversion=75&include=enhancedAllCustomFields`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, Accept: "application/json", "Content-Type": "application/json" },
     body: JSON.stringify(cuerpo),
