@@ -1256,6 +1256,10 @@ var PCAT = '', PVER = 'activos', PSINFOTO = false;
 /* Se piden de 100 en 100. Antes eran 60 fijos y sin aviso: la lista se
    cortaba a la mitad y parecia que no habia mas productos. */
 var PLIM = 100, PMAS = false;
+/* Cada busqueda lleva su numero. Si la respuesta de una busqueda vieja (de
+   cuando ibas en "7500478") llega despues que la del codigo completo, se tira:
+   asi salio el Kacang al buscar los Doritos Incognita (26/oct/2026). */
+var PSEQ = 0, PTIMER = null;
 
 function verMasProd(){ PMAS = true; PLIM += 100; cargaProductos(); }
 
@@ -1272,9 +1276,11 @@ function cargaProductos(){
     u += '&or=(nombre.ilike.' + e + ',upc.ilike.' + e + ')';
   }
   if(PCAT) u += '&categoria=eq.' + encodeURIComponent(PCAT);
+  var mia = ++PSEQ;
   req('GET', u, null, true,
-    function(d){ pintaProductos(d || []); },
+    function(d){ if(mia !== PSEQ) return; pintaProductos(d || []); },
     function(st){
+      if(mia !== PSEQ) return;
       if(st === 401){ refresca(cargaProductos, salir); return; }
       $('listaProd').innerHTML = '<div class="vacio">No se pudieron cargar los productos.</div>';
     });
@@ -2410,7 +2416,9 @@ $('btnTienda').onclick = nuevaTienda;
 var tqEl = $('tq');
 tqEl.onkeyup = cargaTiendas; tqEl.oninput = cargaTiendas; tqEl.onchange = cargaTiendas;
 var pqEl = $('pq');
-pqEl.onkeyup = cargaProductos; pqEl.oninput = cargaProductos; pqEl.onchange = cargaProductos;
+/* Se espera a que termines de escribir (o a que el escaner termine) antes de buscar. */
+function pqBusca(){ clearTimeout(PTIMER); PTIMER = setTimeout(cargaProductos, 250); }
+pqEl.onkeyup = pqBusca; pqEl.oninput = pqBusca; pqEl.onchange = pqBusca;
 $('btnClave').onclick = cambiaClave;
 
 $('entrar').onclick = function(){
