@@ -2025,7 +2025,7 @@ function bBuscaTienda(){
       var h = '', i;
       for(i=0;i<(d || []).length;i++){
         h += '<div class="bln" style="margin:7px 0 0"><div class="nm"><b>' + bEsc(d[i].nombre) + '</b>' +
-             '<small>' + bEsc([d[i].ciudad, d[i].ruta].filter(function(x){ return x; }).join(' &middot; ')) + '</small></div>' +
+             '<small>' + [d[i].ciudad, d[i].ruta].filter(function(x){ return x; }).map(bEsc).join(' &middot; ') + '</small></div>' +
              '<button class="bmano" data-btienda="' + d[i].id + '" data-btnom="' + bEsc(d[i].nombre) + '">Es esta</button></div>';
       }
       $('bTres').innerHTML = h || '<div class="ayuda" style="margin-top:7px">No encontr&eacute; ninguna tienda con eso.</div>';
