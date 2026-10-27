@@ -1195,3 +1195,14 @@ alter table public.gd_qb_valores enable row level security;
 drop policy if exists gd_qb_valores_lee on public.gd_qb_valores;
 create policy gd_qb_valores_lee on public.gd_qb_valores for select to anon, authenticated using (true);
 grant select on public.gd_qb_valores to anon, authenticated;
+
+-- Las rutas de General Distribution, como las dio Manuel (26/oct/2026).
+-- campo_id 'manual': son la lista de la app, no un campo de QuickBooks.
+insert into public.gd_qb_valores (campo_id, campo, rol, valor, veces) values
+  ('manual','Ruta','ruta','Ruta Colorado',0),
+  ('manual','Ruta','ruta','Ruta Idaho',0),
+  ('manual','Ruta','ruta','Ruta Ogden',0),
+  ('manual','Ruta','ruta','Ruta Provo',0),
+  ('manual','Ruta','ruta','Ruta Salt Lake City',0),
+  ('manual','Ruta','ruta','Ruta Foránea',0)
+on conflict (campo_id, valor) do nothing;

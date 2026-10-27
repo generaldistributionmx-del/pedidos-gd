@@ -590,7 +590,10 @@ async function planInvoice(token: string, realm: string, pedidoId: string) {
   const total = Math.round(lineas.reduce((s: number, l: any) => s + l.importe, 0) * 100) / 100;
 
   // Ruta y vendedor van en los campos propios del invoice, como ya los usa Manuel.
-  const defs = await base("gd_qb_valores?select=campo_id,campo,rol&rol=in.(ruta,vendedor)&limit=1000") ?? [];
+  // Solo los campos que vinieron de QuickBooks (campo_id = su DefinitionId).
+  // Las rutas que Manuel dio a mano (campo_id 'manual') son la lista de la
+  // app, no un campo de QuickBooks.
+  const defs = await base("gd_qb_valores?select=campo_id,campo,rol&rol=in.(ruta,vendedor)&campo_id=neq.manual&limit=1000") ?? [];
   const campoDe = (rol: string) => defs.find((x: Record<string, any>) => x.rol === rol);
   const extras: Record<string, unknown>[] = [];
   for (const [rol, valor] of [["ruta", ped.ruta], ["vendedor", ped.vendedor]] as [string, string | null][]) {
