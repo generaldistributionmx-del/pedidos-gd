@@ -222,6 +222,19 @@ h2{font-size:14px;text-transform:uppercase;letter-spacing:.5px;color:#6b7280;
 .bfin[disabled]{background:#9ca3af}
 .breset{background:none;border:0;color:#991b1b;text-decoration:underline;font-size:14px;margin-top:12px}
 .est.preparando{background:#ffedd5;color:#9a3412}
+.bsrow{display:flex;gap:7px;align-items:stretch;margin-top:8px}
+.bsrow .bscan{margin:0;flex:1;min-width:0;width:auto}
+.bcam{flex:none;width:62px;border:0;border-radius:10px;background:#1f2937;color:#fff;font-size:26px}
+.cam{display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:200;background:rgba(0,0,0,.94);
+  padding:14px;text-align:center;color:#fff;overflow:auto}
+.cam.on{display:block}
+#camVista{width:100%;max-width:520px;margin:6px auto 0;border-radius:10px;overflow:hidden;background:#000;min-height:200px}
+#camMsg{margin:12px auto;max-width:520px;font-size:18px;font-weight:700;border-radius:10px;padding:12px}
+#camMsg.ok{background:#16a34a}
+#camMsg.mal{background:#dc2626}
+.cambt{padding:13px 22px;font-size:17px;border:0;border-radius:9px;font-weight:700;margin:4px}
+#camSig{background:#16a34a;color:#fff}
+#camCerrar{background:#fff;color:#111}
 </style>
 </head>
 <body>
@@ -364,6 +377,13 @@ h2{font-size:14px;text-transform:uppercase;letter-spacing:.5px;color:#6b7280;
     </div>
 
   </div>
+</div>
+
+<div class="cam" id="cam">
+  <div id="camVista"></div>
+  <div id="camMsg">Prendiendo la c&aacute;mara&hellip;</div>
+  <button class="cambt" id="camSig" type="button" style="display:none">Siguiente pieza</button>
+  <button class="cambt" id="camCerrar" type="button">Cerrar</button>
 </div>
 
 <script>
@@ -1681,7 +1701,8 @@ function pintaPicking(msg, clase){
   if(!terminada){
     h += '<input id="bNom" placeholder="Tu nombre (quien surte)" autocomplete="off" value="' + bEsc(nom) + '" ' +
          'style="width:100%;padding:12px;font-size:16px;border:1px solid #d5d9df;border-radius:8px">';
-    h += '<input id="bScan" class="bscan" placeholder="Escanea aqu&iacute;" autocomplete="off">';
+    h += '<div class="bsrow"><input id="bScan" class="bscan" placeholder="Escanea aqu&iacute;" autocomplete="off">' +
+         '<button class="bcam" id="bCam" type="button" aria-label="Escanear con la c&aacute;mara">&#128247;</button></div>';
   }
   h += '<div id="bMsg" class="bmsg ' + (clase || '') + '">' + (msg || '') + '</div>';
 
@@ -1752,13 +1773,17 @@ function pintaPicking(msg, clase){
     var bb = $('bBusca');
     bb.oninput = bBuscar; bb.onkeyup = bBuscar;
     bb.onkeydown = function(ev){ if(ev.keyCode === 13 && ev.preventDefault) ev.preventDefault(); };
+    $('bCam').onclick = camAbre;
     if(nom) $('bScan').focus(); else $('bNom').focus();
   }
+  /* Con la camara abierta, lo que dice la orden se ve tambien encima de la camara. */
+  if(CAM && $('camMsg') && msg){ $('camMsg').className = clase || ''; $('camMsg').innerHTML = msg; }
 }
 
 function bAviso(msg, clase){
   var m = $('bMsg');
   if(m){ m.className = 'bmsg ' + clase; m.innerHTML = msg; }
+  if(CAM && $('camMsg')){ $('camMsg').className = clase; $('camMsg').innerHTML = msg; }
   if($('bScan')) $('bScan').focus();
 }
 
@@ -1937,6 +1962,78 @@ function bRuta(){
   mueveEstado(BPED.id, 'en_camino');
   cargaBodega();
 }
+
+/* ---- La camara del telefono como escaner en Bodega (26/oct/2026) ----
+   Igual que en la app de pedidos: el lector se baja solo al apretar el
+   boton. Despues de cada lectura la camara se PAUSA y enseña si estuvo bien
+   o mal; se sigue con "Siguiente pieza". Asi una misma caja frente a la
+   camara no se cuenta diez veces. */
+var CAM = null;
+function camLib(ok, falla){
+  if(window.Html5Qrcode){ ok(); return; }
+  var sc = document.createElement('script');
+  sc.src = 'https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js';
+  sc.onload = ok; sc.onerror = falla;
+  document.getElementsByTagName('head')[0].appendChild(sc);
+}
+function camMsg(t, clase){ $('camMsg').className = clase || ''; $('camMsg').innerHTML = t; }
+function camCierra(){
+  $('cam').className = 'cam';
+  $('camSig').style.display = 'none';
+  if(!CAM) return;
+  var c = CAM; CAM = null;
+  try { c.stop().then(function(){ try { c.clear(); } catch(e){} }, function(){}); } catch(e){}
+  if($('bScan')) $('bScan').focus();
+}
+function camLeyo(txt){
+  if(!CAM || CAM.pausada) return;
+  CAM.pausada = true;
+  try { CAM.pause(true); } catch(e){}
+  try { if(navigator.vibrate) navigator.vibrate(120); } catch(e){}
+  camMsg('Le&iacute; ' + bEsc(txt) + '&hellip;', '');
+  $('camSig').style.display = 'inline-block';
+  bEscanea(txt);
+}
+function camSigue(){
+  if(!CAM) return;
+  CAM.pausada = false;
+  try { CAM.resume(); } catch(e){}
+  $('camSig').style.display = 'none';
+  camMsg('Apunta al c&oacute;digo de la siguiente pieza', '');
+}
+function camAbre(){
+  if(!bNombre()){ bSonido(false); bAviso('Primero escribe tu nombre arriba.', 'mal'); $('bNom').focus(); return; }
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    bAviso('Este tel&eacute;fono no deja usar la c&aacute;mara desde el navegador.', 'mal');
+    return;
+  }
+  $('cam').className = 'cam on';
+  $('camSig').style.display = 'none';
+  camMsg('Prendiendo la c&aacute;mara&hellip;', '');
+  camLib(function(){
+    try {
+      var F = window.Html5QrcodeSupportedFormats;
+      CAM = new window.Html5Qrcode('camVista', {
+        formatsToSupport: [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODE_128, F.CODE_39, F.ITF],
+        experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+        verbose: false
+      });
+      CAM.start({ facingMode: 'environment' },
+        { fps: 12, qrbox: function(w, h){ return { width: Math.floor(w * 0.88), height: Math.floor(Math.min(w, h) * 0.42) }; } },
+        camLeyo, function(){})
+        .then(function(){ camMsg('Apunta al c&oacute;digo de barras', ''); },
+              function(){ CAM = null;
+                camMsg('No pude prender la c&aacute;mara.<br><small>Dale permiso a la c&aacute;mara para esta p&aacute;gina y vuelve a intentar.</small>', 'mal'); });
+    } catch(e){
+      CAM = null;
+      camMsg('No pude prender la c&aacute;mara en este tel&eacute;fono.', 'mal');
+    }
+  }, function(){
+    camMsg('No se pudo cargar el lector.<br><small>Revisa el internet y vuelve a intentar.</small>', 'mal');
+  });
+}
+$('camSig').onclick = camSigue;
+$('camCerrar').onclick = camCierra;
 
 /* ---- eventos ---- */
 document.addEventListener('click', function(e){
