@@ -165,6 +165,37 @@ h2{font-size:14px;text-transform:uppercase;letter-spacing:.5px;color:#6b7280;
 .pas.atras{opacity:.55}
 .canc{margin-top:8px;font-size:12px;color:#b91c1c;background:transparent;border:0;
       text-decoration:underline;width:auto;padding:4px 0}
+/* ---- Bodega: picking con escaner ---- */
+.bped{background:#fff;border-radius:10px;margin-bottom:8px;padding:13px;box-shadow:0 1px 2px rgba(16,24,40,.07);
+  display:flex;justify-content:space-between;align-items:center;gap:10px;cursor:pointer}
+.bped .t{font-weight:700}
+.bped .m{font-size:13px;color:#6b7280;margin-top:2px}
+.bbar{height:7px;background:#e5e7eb;border-radius:9px;overflow:hidden;margin-top:7px;width:140px;max-width:100%}
+.bbar i{display:block;height:100%;background:#16a34a}
+.prueba{display:inline-block;font-size:11px;font-weight:700;background:#fef3c7;color:#7c4a03;
+  border-radius:5px;padding:1px 6px;margin-left:6px;vertical-align:middle}
+.bhead{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.bvolver{border:1px solid #d5d9df;background:#fff;border-radius:7px;padding:8px 11px;font-size:14px}
+.bscan{width:100%;padding:16px;font-size:20px;border:3px solid #1f2937;border-radius:10px;margin:8px 0 0;
+  font-variant-numeric:tabular-nums}
+.bscan:focus{outline:none;border-color:#2563eb}
+.bmsg{border-radius:10px;padding:14px;margin:10px 0;font-size:17px;font-weight:700;display:none;line-height:1.35}
+.bmsg.ok{display:block;background:#dcfce7;color:#065f2b}
+.bmsg.mal{display:block;background:#dc2626;color:#fff;font-size:19px}
+.bln{background:#fff;border-radius:9px;padding:11px 12px;margin-bottom:7px;border-left:6px solid #d1d5db;
+  display:flex;gap:10px;align-items:center}
+.bln.medio{border-left-color:#f59e0b}
+.bln.listo{border-left-color:#16a34a;background:#f0fdf4}
+.bln .cu{font-size:20px;font-weight:800;min-width:62px;text-align:center;font-variant-numeric:tabular-nums}
+.bln .nm{flex:1;min-width:0}
+.bln .nm b{display:block}
+.bln .nm small{color:#6b7280;font-size:12px}
+.bln .sc{color:#b45309}
+.bmano{border:1px solid #d5d9df;background:#fff;border-radius:7px;padding:6px 9px;font-size:13px;margin-top:5px}
+.bfin{width:100%;padding:15px;font-size:17px;font-weight:700;border:0;border-radius:10px;
+  background:#16a34a;color:#fff;margin-top:8px}
+.bfin[disabled]{background:#9ca3af}
+.breset{background:none;border:0;color:#991b1b;text-decoration:underline;font-size:14px;margin-top:12px}
 </style>
 </head>
 <body>
@@ -189,6 +220,7 @@ h2{font-size:14px;text-transform:uppercase;letter-spacing:.5px;color:#6b7280;
   </header>
   <div class="tabs">
     <button class="tab on" data-sec="pedidos">Pedidos</button>
+    <button class="tab" data-sec="bodega">Bodega</button>
     <button class="tab" data-sec="tiendas">Tiendas</button>
     <button class="tab" data-sec="productos">Productos</button>
     <button class="tab" data-sec="equipo" id="tabEquipo" style="display:none">Equipo</button>
@@ -205,6 +237,10 @@ h2{font-size:14px;text-transform:uppercase;letter-spacing:.5px;color:#6b7280;
         <div class="tile"><b id="t3">0</b><span>tiendas</span></div>
       </div>
       <div id="cuerpo"><div class="cargando">Cargando&hellip;</div></div>
+    </div>
+
+    <div class="panel-sec" id="sec-bodega">
+      <div id="bodega"><div class="cargando">Cargando&hellip;</div></div>
     </div>
 
     <div class="panel-sec" id="sec-tiendas">
@@ -1427,6 +1463,246 @@ function pinta(){
   $('cuerpo').innerHTML = h;
 }
 
+/* ---- Bodega: picking con escaner ----
+   Pedido por Manuel y Helen (26/oct/2026): se pierde dinero cuando en bodega
+   agarran el producto hermano (Carlos V chico por grande, mazapan 20/30 por
+   48/12). Aqui cada pieza se escanea antes de empacarla y el codigo TIENE que
+   ser de un producto del pedido. El conteo lo guarda la base (gd_bodega_*). */
+var BPEDS = [], BPED = null, BPROD = null, BRESET = false;
+
+function bCod(s){ return String(s || '').replace(/\D/g, '').replace(/^0+/, ''); }
+/* Mismo criterio que la app: sin ceros adelante y con o sin el digito verificador. */
+function bIgual(u, c){
+  if(!u || !c) return false;
+  return u === c || u.slice(0, -1) === c || c.slice(0, -1) === u;
+}
+function bEsc(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+
+function bSonido(bien){
+  try {
+    var C = window.AudioContext || window.webkitAudioContext;
+    if(!C) return;
+    if(!bSonido.c) bSonido.c = new C();
+    var c = bSonido.c, o = c.createOscillator(), g = c.createGain();
+    o.connect(g); g.connect(c.destination);
+    o.frequency.value = bien ? 1250 : 220;
+    o.type = bien ? 'sine' : 'square';
+    g.gain.value = 0.25;
+    o.start();
+    o.stop(c.currentTime + (bien ? 0.12 : 0.6));
+  } catch(e){}
+}
+
+function bRpc(fn, cuerpo, ok, falla){
+  req('POST', SB + '/rest/v1/rpc/' + fn, cuerpo, true, ok, function(st, d){
+    if(st === 401){ refresca(function(){ bRpc(fn, cuerpo, ok, falla); }, salir); return; }
+    if(falla) falla(st, d);
+  });
+}
+
+/* El catalogo completo, una vez: para decir QUE se escaneo cuando no es del pedido. */
+function bCatalogo(listo){
+  if(BPROD){ listo(); return; }
+  req('GET', SB + '/rest/v1/gd_productos?select=id,nombre,upc&limit=5000', null, true,
+    function(d){
+      BPROD = {};
+      for(var i=0;i<(d||[]).length;i++) BPROD[d[i].id] = {n:d[i].nombre, u:bCod(d[i].upc)};
+      listo();
+    },
+    function(st){
+      if(st === 401){ refresca(function(){ bCatalogo(listo); }, salir); return; }
+      $('bodega').innerHTML = '<div class="vacio">No se pudo cargar el cat&aacute;logo.</div>';
+    });
+}
+
+function cargaBodega(){
+  BPED = null;
+  $('bodega').innerHTML = '<div class="cargando">Cargando&hellip;</div>';
+  var u = SB + '/rest/v1/gd_pedidos?select=id,folio,tienda,articulos,total,creado,es_prueba,picking_por,' +
+          'gd_pedido_lineas(cantidad,surtido)&estado=eq.nuevo&order=creado.asc&limit=200';
+  req('GET', u, null, true,
+    function(d){ BPEDS = d || []; pintaBodega(); },
+    function(st){
+      if(st === 401){ refresca(cargaBodega, salir); return; }
+      $('bodega').innerHTML = '<div class="vacio">No se pudieron cargar los pedidos.</div>';
+    });
+}
+
+function pintaBodega(){
+  var h = '<h2>Por surtir</h2>', i, j;
+  h += '<p class="ayuda" style="padding:0 3px;margin-top:-2px">Toca un pedido, escribe tu nombre ' +
+       'y escanea <b>cada pieza</b> antes de empacarla. Si no es del pedido, no cuenta.</p>';
+  if(!BPEDS.length){
+    $('bodega').innerHTML = h + '<div class="vacio">No hay pedidos por surtir.<br>' +
+      'Los pedidos nuevos aparecen aqu&iacute; solos.</div>';
+    return;
+  }
+  for(i=0;i<BPEDS.length;i++){
+    var p = BPEDS[i], ls = p.gd_pedido_lineas || [], pz = 0, ya = 0;
+    for(j=0;j<ls.length;j++){ pz += ls[j].cantidad; ya += Math.min(ls[j].surtido || 0, ls[j].cantidad); }
+    var pct = pz ? Math.round(ya * 100 / pz) : 0;
+    h += '<div class="bped" data-bab="' + p.id + '"><div>';
+    h += '<div class="t">' + bEsc(p.tienda) + (p.es_prueba ? '<span class="prueba">PRUEBA</span>' : '') + '</div>';
+    h += '<div class="m">Folio ' + p.folio + ' &middot; ' + fecha(p.creado) +
+         (p.picking_por ? ' &middot; lo surte <b>' + bEsc(p.picking_por) + '</b>' : '') + '</div>';
+    h += '<div class="bbar"><i style="width:' + pct + '%"></i></div></div>';
+    h += '<div style="text-align:right"><b style="font-size:18px">' + ya + '/' + pz + '</b>' +
+         '<div class="m">piezas</div></div></div>';
+  }
+  $('bodega').innerHTML = h;
+}
+
+function abreBodega(id){
+  $('bodega').innerHTML = '<div class="cargando">Abriendo el pedido&hellip;</div>';
+  bCatalogo(function(){
+    var u = SB + '/rest/v1/gd_pedidos?id=eq.' + id + '&select=id,folio,tienda,nota,total,creado,estado,es_prueba,' +
+            'picking_por,gd_pedido_lineas(id,producto_id,producto,precio,cantidad,surtido,surtido_mano)';
+    req('GET', u, null, true,
+      function(d){
+        if(!d || !d.length){ cargaBodega(); return; }
+        BPED = d[0]; BRESET = false;
+        BPED.gd_pedido_lineas.sort(function(a, b){ return a.producto < b.producto ? -1 : 1; });
+        pintaPicking('', '');
+      },
+      function(st){
+        if(st === 401){ refresca(function(){ abreBodega(id); }, salir); return; }
+        $('bodega').innerHTML = '<div class="vacio">No se pudo abrir el pedido.</div>';
+      });
+  });
+}
+
+function bLinea(id){
+  var ls = BPED.gd_pedido_lineas;
+  for(var i=0;i<ls.length;i++) if(ls[i].id === id) return ls[i];
+  return null;
+}
+
+function bNombre(){
+  return $('bNom') ? $('bNom').value.replace(/^\s+|\s+$/g, '') : '';
+}
+
+function pintaPicking(msg, clase){
+  var p = BPED, ls = p.gd_pedido_lineas, i, pz = 0, ya = 0, todo = true;
+  var nom = p.picking_por || '';
+  if(!nom){ try { nom = localStorage.getItem('gd_bnom') || ''; } catch(e){} }
+  if($('bNom')) nom = $('bNom').value;
+  var h = '<div class="bhead"><button class="bvolver" data-bvolver="1">&larr; Pedidos</button>';
+  h += '<div><div style="font-weight:800;font-size:17px">' + bEsc(p.tienda) +
+       (p.es_prueba ? '<span class="prueba">PRUEBA</span>' : '') + '</div>';
+  h += '<div style="color:#6b7280;font-size:13px">Folio ' + p.folio + ' &middot; ' + fecha(p.creado) + '</div></div></div>';
+  if(p.nota) h += '<div class="card" style="padding:10px 12px"><b>Nota:</b> ' + bEsc(p.nota) + '</div>';
+  h += '<input id="bNom" placeholder="Tu nombre (quien surte)" autocomplete="off" value="' +
+       bEsc(nom).replace(/"/g,'&quot;') + '" ' +
+       'style="width:100%;padding:12px;font-size:16px;border:1px solid #d5d9df;border-radius:8px">';
+  h += '<input id="bScan" class="bscan" placeholder="Escanea aqu&iacute;" autocomplete="off">';
+  h += '<div id="bMsg" class="bmsg ' + (clase || '') + '">' + (msg || '') + '</div>';
+  for(i=0;i<ls.length;i++){
+    var l = ls[i], s = Math.min(l.surtido || 0, l.cantidad), pr = BPROD[l.producto_id];
+    var cod = pr ? pr.u : '';
+    pz += l.cantidad; ya += s;
+    if(s < l.cantidad) todo = false;
+    var est = s >= l.cantidad ? 'listo' : (s > 0 ? 'medio' : '');
+    h += '<div class="bln ' + est + '"><div class="cu">' + s + '/' + l.cantidad + '</div><div class="nm">';
+    h += '<b>' + bEsc(l.producto) + '</b><small>' + money(l.precio) + ' c/u &middot; ';
+    h += cod ? 'c&oacute;digo ' + cod : '<span class="sc">sin c&oacute;digo de barras</span>';
+    if(l.surtido_mano) h += ' &middot; ' + l.surtido_mano + ' a mano';
+    h += '</small>';
+    if(s < l.cantidad){
+      /* Ya se escaneo una pieza de verdad: las demas de la misma caja se pueden contar de un jalon. */
+      var escaneadas = s - (l.surtido_mano || 0);
+      if(cod && escaneadas > 0 && l.cantidad - s > 1)
+        h += '<button class="bmano" data-btodos="' + l.id + '">Contar los ' + (l.cantidad - s) + ' que faltan</button>';
+      if(!cod)
+        h += '<button class="bmano" data-bmano="' + l.id + '">Confirmar a mano (' + (l.cantidad - s) + ')</button>';
+    }
+    h += '</div></div>';
+  }
+  h += '<button class="bfin" data-bfin="1"' + (todo ? '' : ' disabled') + '>' +
+       (todo ? '&#10003; Terminar picking' : 'Faltan ' + (pz - ya) + ' de ' + pz + ' piezas') + '</button>';
+  h += '<div style="text-align:center"><button class="breset" data-breset="1">' +
+       (BRESET ? '&iquest;Seguro? Toca otra vez para contar desde cero' : 'Volver a contar desde cero') +
+       '</button></div>';
+  $('bodega').innerHTML = h;
+  $('bScan').onkeydown = function(ev){
+    if(ev.keyCode !== 13) return;
+    if(ev.preventDefault) ev.preventDefault();
+    var v = $('bScan').value;
+    $('bScan').value = '';
+    bEscanea(v);
+  };
+  $('bNom').onchange = function(){ try { localStorage.setItem('gd_bnom', bNombre()); } catch(e){} };
+  if(nom) $('bScan').focus(); else $('bNom').focus();
+}
+
+function bAviso(msg, clase){
+  var m = $('bMsg');
+  if(m){ m.className = 'bmsg ' + clase; m.innerHTML = msg; }
+  if($('bScan')) $('bScan').focus();
+}
+
+function bEscanea(txt){
+  var c = bCod(txt);
+  if(!c) return;
+  var nom = bNombre();
+  if(!nom){ bSonido(false); bAviso('Primero escribe tu nombre arriba.', 'mal'); $('bNom').focus(); return; }
+  if(BPED.picking_por !== nom){
+    BPED.picking_por = nom;
+    try { localStorage.setItem('gd_bnom', nom); } catch(e){}
+    bRpc('gd_bodega_empieza', {p_pedido: BPED.id, p_nombre: nom}, function(){});
+  }
+  var ls = BPED.gd_pedido_lineas, i, cual = null, lleno = null;
+  for(i=0;i<ls.length;i++){
+    var pr = BPROD[ls[i].producto_id];
+    if(!pr || !bIgual(pr.u, c)) continue;
+    if(ls[i].surtido < ls[i].cantidad){ cual = ls[i]; break; }
+    lleno = ls[i];
+  }
+  if(!cual){
+    bSonido(false);
+    if(lleno){
+      bAviso('YA EST&Aacute; COMPLETO: ' + bEsc(lleno.producto) + ' (' + lleno.cantidad + ' de ' +
+             lleno.cantidad + '). No metas m&aacute;s.', 'mal');
+      return;
+    }
+    var otro = '', k;
+    for(k in BPROD){ if(BPROD.hasOwnProperty(k) && bIgual(BPROD[k].u, c)){ otro = BPROD[k].n; break; } }
+    bAviso('&#10007; NO EST&Aacute; EN ESTE PEDIDO<br>' +
+           (otro ? 'Escaneaste: <u>' + bEsc(otro) + '</u>' : 'C&oacute;digo ' + c + ' (no lo conozco)') +
+           '<br><small style="font-weight:400">Rev&iacute;salo y agarra el que dice la orden.</small>', 'mal');
+    return;
+  }
+  bSuma(cual, 1, false);
+}
+
+function bSuma(l, n, mano){
+  bRpc('gd_bodega_suma', {p_linea: l.id, p_cuantas: n, p_mano: mano},
+    function(r){
+      var antes = l.surtido;
+      l.surtido = (r && r.surtido != null) ? r.surtido : Math.min(l.cantidad, l.surtido + n);
+      if(mano) l.surtido_mano = (l.surtido_mano || 0) + (l.surtido - antes);
+      bSonido(true);
+      pintaPicking('&#10003; ' + bEsc(l.producto) + ' &mdash; ' + l.surtido + ' de ' + l.cantidad +
+                   (l.surtido >= l.cantidad ? ' &middot; COMPLETO' : ''), 'ok');
+    },
+    function(){ bSonido(false); bAviso('No se guard&oacute;. Revisa el internet y escanea otra vez.', 'mal'); });
+}
+
+function bTermina(){
+  bRpc('gd_bodega_termina', {p_pedido: BPED.id},
+    function(r){
+      if(r && r.ok){ cargaBodega(); return; }
+      bAviso('Todav&iacute;a faltan ' + (r ? r.faltan : '') + ' productos por surtir.', 'mal');
+    },
+    function(){ bAviso('No se pudo terminar. Revisa el internet.', 'mal'); });
+}
+
+function bReinicia(){
+  if(!BRESET){ BRESET = true; pintaPicking('', ''); return; }
+  bRpc('gd_bodega_reinicia', {p_pedido: BPED.id},
+    function(){ abreBodega(BPED.id); },
+    function(){ bAviso('No se pudo reiniciar.', 'mal'); });
+}
+
 /* ---- eventos ---- */
 document.addEventListener('click', function(e){
   var el = e.target;
@@ -1450,11 +1726,24 @@ document.addEventListener('click', function(e){
         for(i=0;i<ss.length;i++) ss[i].className = 'panel-sec';
         $('sec-' + sec).className = 'panel-sec on';
         if(sec === 'equipo')    cargaEquipo();
+        if(sec === 'bodega')    cargaBodega();
         if(sec === 'tiendas')   cargaTiendas();
         if(sec === 'productos'){ pchips(); cargaProductos(); }
         window.scrollTo(0,0);
         return;
       }
+      var bab = el.getAttribute('data-bab');
+      if(bab){ abreBodega(bab); return; }
+      if(el.getAttribute('data-bvolver')){ cargaBodega(); return; }
+      var bmn = el.getAttribute('data-bmano');
+      if(bmn){ var lm = bLinea(bmn);
+               if(lm){ if(!bNombre()){ bAviso('Primero escribe tu nombre arriba.', 'mal'); return; }
+                       bSuma(lm, lm.cantidad - lm.surtido, true); }
+               return; }
+      var btd = el.getAttribute('data-btodos');
+      if(btd){ var lt = bLinea(btd); if(lt) bSuma(lt, lt.cantidad - lt.surtido, false); return; }
+      if(el.getAttribute('data-bfin')){ if(!el.disabled) bTermina(); return; }
+      if(el.getAttribute('data-breset')){ bReinicia(); return; }
       var sw = el.getAttribute('data-sw');
       if(sw){ prendeApaga(sw, el.getAttribute('data-val')); return; }
       var lk = el.getAttribute('data-link');

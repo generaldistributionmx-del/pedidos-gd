@@ -945,3 +945,94 @@ grant execute on function public.gd_tienda_por_codigo(text) to anon, authenticat
 --    El equipo la sigue leyendo; el panel usa gd_tiendas y no se entera.
 revoke select on public.gd_tienda_publica from anon;
 grant  select on public.gd_tienda_publica to authenticated;
+
+-- --------------------------------------------------------------------------
+--  Bodega: picking con escaner (pedido por Manuel y Helen, 26 de octubre de 2026)
+-- --------------------------------------------------------------------------
+-- El bodeguero escanea cada pieza antes de empacarla. Si el codigo no es de un
+-- producto del pedido, no cuenta: asi no sale el Carlos V chico por el grande.
+-- Lo que se surte se cuenta en el renglon; el precio y el nombre congelados no
+-- se tocan. Al terminar, el pedido pasa a 'preparado' (queda en el historial).
+
+alter table public.gd_pedido_lineas
+  add column if not exists surtido      integer not null default 0,
+  add column if not exists surtido_mano integer not null default 0;   -- de esos, cuantos sin escanear (producto sin codigo)
+
+alter table public.gd_pedidos
+  add column if not exists picking_por    text,
+  add column if not exists picking_inicio timestamptz,
+  add column if not exists picking_fin    timestamptz;
+
+comment on column public.gd_pedido_lineas.surtido is
+  'Piezas que el bodeguero ya escaneo (o confirmo a mano). Nunca pasa de cantidad.';
+
+-- Los renglones no tienen permiso de UPDATE para nadie: el conteo solo se
+-- mueve por estas funciones, que revisan el gafete y los topes.
+create or replace function public.gd_bodega_suma(p_linea uuid, p_cuantas integer default 1, p_mano boolean default false)
+returns jsonb language plpgsql security definer set search_path to 'public' as $$
+declare v public.gd_pedido_lineas;
+begin
+  if not exists (select 1 from public.gd_perfiles where id = auth.uid() and activo) then
+    raise exception 'Sin permiso';
+  end if;
+  update public.gd_pedido_lineas
+     set surtido      = least(cantidad, surtido + greatest(p_cuantas, 0)),
+         surtido_mano = surtido_mano + case when p_mano
+                          then least(cantidad, surtido + greatest(p_cuantas, 0)) - surtido else 0 end
+   where id = p_linea
+  returning * into v;
+  if v.id is null then raise exception 'No existe ese renglon'; end if;
+  return jsonb_build_object('surtido', v.surtido, 'cantidad', v.cantidad);
+end $$;
+
+create or replace function public.gd_bodega_empieza(p_pedido uuid, p_nombre text)
+returns void language plpgsql security definer set search_path to 'public' as $$
+begin
+  if not exists (select 1 from public.gd_perfiles where id = auth.uid() and activo) then
+    raise exception 'Sin permiso';
+  end if;
+  update public.gd_pedidos
+     set picking_por = nullif(trim(p_nombre), ''),
+         picking_inicio = coalesce(picking_inicio, now())
+   where id = p_pedido;
+end $$;
+
+-- Volver a contar desde cero (si se empaco mal y se deshace la caja).
+create or replace function public.gd_bodega_reinicia(p_pedido uuid)
+returns void language plpgsql security definer set search_path to 'public' as $$
+begin
+  if not exists (select 1 from public.gd_perfiles where id = auth.uid() and activo) then
+    raise exception 'Sin permiso';
+  end if;
+  update public.gd_pedido_lineas set surtido = 0, surtido_mano = 0 where pedido_id = p_pedido;
+  update public.gd_pedidos set picking_fin = null where id = p_pedido;
+end $$;
+
+-- Terminar: solo si TODO esta completo. Lo valida la base, no el telefono.
+create or replace function public.gd_bodega_termina(p_pedido uuid)
+returns jsonb language plpgsql security definer set search_path to 'public' as $$
+declare v_falta integer;
+begin
+  if not exists (select 1 from public.gd_perfiles where id = auth.uid() and activo) then
+    raise exception 'Sin permiso';
+  end if;
+  select count(*) into v_falta from public.gd_pedido_lineas
+   where pedido_id = p_pedido and surtido < cantidad;
+  if v_falta > 0 then
+    return jsonb_build_object('ok', false, 'faltan', v_falta);
+  end if;
+  update public.gd_pedidos
+     set picking_fin = now(),
+         estado = case when estado = 'nuevo' then 'preparado' else estado end
+   where id = p_pedido;
+  return jsonb_build_object('ok', true);
+end $$;
+
+revoke all on function public.gd_bodega_suma(uuid, integer, boolean) from public, anon;
+revoke all on function public.gd_bodega_empieza(uuid, text)          from public, anon;
+revoke all on function public.gd_bodega_reinicia(uuid)               from public, anon;
+revoke all on function public.gd_bodega_termina(uuid)                from public, anon;
+grant execute on function public.gd_bodega_suma(uuid, integer, boolean) to authenticated;
+grant execute on function public.gd_bodega_empieza(uuid, text)          to authenticated;
+grant execute on function public.gd_bodega_reinicia(uuid)               to authenticated;
+grant execute on function public.gd_bodega_termina(uuid)                to authenticated;
