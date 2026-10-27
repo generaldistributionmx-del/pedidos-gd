@@ -1506,7 +1506,7 @@ function bCatalogo(listo){
   req('GET', SB + '/rest/v1/gd_productos?select=id,nombre,upc&limit=5000', null, true,
     function(d){
       BPROD = {};
-      for(var i=0;i<(d||[]).length;i++) BPROD[d[i].id] = {n:d[i].nombre, u:bCod(d[i].upc)};
+      for(var i=0;i<(d||[]).length;i++) BPROD[d[i].id] = {n:d[i].nombre, u:bCod(d[i].upc), r:(d[i].upc || '')};
       listo();
     },
     function(st){
@@ -1604,7 +1604,7 @@ function pintaPicking(msg, clase){
     var est = s >= l.cantidad ? 'listo' : (s > 0 ? 'medio' : '');
     h += '<div class="bln ' + est + '"><div class="cu">' + s + '/' + l.cantidad + '</div><div class="nm">';
     h += '<b>' + bEsc(l.producto) + '</b><small>' + money(l.precio) + ' c/u &middot; ';
-    h += cod ? 'c&oacute;digo ' + cod : '<span class="sc">sin c&oacute;digo de barras</span>';
+    h += cod ? 'c&oacute;digo ' + bEsc(pr.r) : '<span class="sc">sin c&oacute;digo de barras</span>';
     if(l.surtido_mano) h += ' &middot; ' + l.surtido_mano + ' a mano';
     h += '</small>';
     if(s < l.cantidad){
