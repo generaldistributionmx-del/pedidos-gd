@@ -1036,3 +1036,134 @@ grant execute on function public.gd_bodega_suma(uuid, integer, boolean) to authe
 grant execute on function public.gd_bodega_empieza(uuid, text)          to authenticated;
 grant execute on function public.gd_bodega_reinicia(uuid)               to authenticated;
 grant execute on function public.gd_bodega_termina(uuid)                to authenticated;
+
+-- --------------------------------------------------------------------------
+--  Bodega 2: preparar la orden, ajustar lo que no hay y sacar el invoice
+--  (Manuel y Helen, 26 de octubre de 2026)
+-- --------------------------------------------------------------------------
+-- Un paso mas en el camino del pedido: 'preparando' (alguien ya esta surtiendo).
+alter table public.gd_pedidos drop constraint if exists gd_pedidos_estado_ok;
+alter table public.gd_pedidos add constraint gd_pedidos_estado_ok check (estado in
+  ('nuevo','preparando','preparado','en_camino','entregado','pagado','cancelado'));
+
+-- Lo que bodega cambia del pedido NO se borra: se marca.
+alter table public.gd_pedido_lineas
+  add column if not exists quitado         boolean not null default false,
+  add column if not exists agregado_bodega boolean not null default false,
+  add column if not exists cantidad_pedida integer;          -- lo que pidio la tienda, si bodega lo cambio
+
+-- El invoice que se creo en QuickBooks, para no crearlo dos veces.
+alter table public.gd_pedidos
+  add column if not exists qb_invoice_id    text,
+  add column if not exists qb_invoice_num   text,
+  add column if not exists qb_invoice_total numeric(12,2),
+  add column if not exists qb_invoice_el    timestamptz;
+
+create or replace function public.gd_bodega_equipo()
+returns boolean language sql stable security definer set search_path to 'public' as $$
+  select exists (select 1 from public.gd_perfiles where id = auth.uid() and activo);
+$$;
+
+-- Total y articulos del pedido, siempre sin lo quitado.
+create or replace function public.gd_bodega_recalcula(p_pedido uuid)
+returns void language plpgsql security definer set search_path to 'public' as $$
+begin
+  update public.gd_pedidos d
+     set total     = coalesce((select sum(importe)  from public.gd_pedido_lineas where pedido_id = d.id and not quitado), 0),
+         articulos = coalesce((select sum(cantidad) from public.gd_pedido_lineas where pedido_id = d.id and not quitado), 0)
+   where d.id = p_pedido;
+end $$;
+revoke all on function public.gd_bodega_recalcula(uuid) from public, anon, authenticated;
+
+create or replace function public.gd_bodega_empieza(p_pedido uuid, p_nombre text)
+returns void language plpgsql security definer set search_path to 'public' as $$
+begin
+  if not public.gd_bodega_equipo() then raise exception 'Sin permiso'; end if;
+  update public.gd_pedidos
+     set picking_por = nullif(trim(p_nombre), ''),
+         picking_inicio = coalesce(picking_inicio, now()),
+         estado = case when estado = 'nuevo' then 'preparando' else estado end
+   where id = p_pedido;
+end $$;
+
+-- Cambiar cuantas van (no hay suficientes). Minimo 1; para cero se quita.
+create or replace function public.gd_bodega_cantidad(p_linea uuid, p_cantidad integer)
+returns jsonb language plpgsql security definer set search_path to 'public' as $$
+declare v public.gd_pedido_lineas;
+begin
+  if not public.gd_bodega_equipo() then raise exception 'Sin permiso'; end if;
+  if p_cantidad < 1 then raise exception 'Para dejarlo en cero, quitalo'; end if;
+  update public.gd_pedido_lineas
+     set cantidad_pedida = coalesce(cantidad_pedida, cantidad),
+         cantidad = p_cantidad,
+         importe  = round(precio * p_cantidad, 2),
+         surtido  = least(surtido, p_cantidad),
+         surtido_mano = least(surtido_mano, p_cantidad)
+   where id = p_linea
+  returning * into v;
+  if v.id is null then raise exception 'No existe ese renglon'; end if;
+  perform public.gd_bodega_recalcula(v.pedido_id);
+  return to_jsonb(v);
+end $$;
+
+-- Quitar (o regresar) un producto del pedido. No se borra: queda marcado.
+create or replace function public.gd_bodega_quita(p_linea uuid, p_quitar boolean default true)
+returns jsonb language plpgsql security definer set search_path to 'public' as $$
+declare v public.gd_pedido_lineas;
+begin
+  if not public.gd_bodega_equipo() then raise exception 'Sin permiso'; end if;
+  update public.gd_pedido_lineas set quitado = p_quitar where id = p_linea returning * into v;
+  if v.id is null then raise exception 'No existe ese renglon'; end if;
+  perform public.gd_bodega_recalcula(v.pedido_id);
+  return to_jsonb(v);
+end $$;
+
+-- Agregar un producto. El precio: el de esa tienda si lo tiene, si no el del catalogo.
+create or replace function public.gd_bodega_agrega(p_pedido uuid, p_producto uuid, p_cantidad integer default 1)
+returns jsonb language plpgsql security definer set search_path to 'public' as $$
+declare p public.gd_productos; v_precio numeric; v_tienda uuid; v public.gd_pedido_lineas;
+begin
+  if not public.gd_bodega_equipo() then raise exception 'Sin permiso'; end if;
+  if p_cantidad < 1 then raise exception 'La cantidad tiene que ser 1 o mas'; end if;
+  select * into p from public.gd_productos where id = p_producto;
+  if p.id is null then raise exception 'No existe ese producto'; end if;
+  select tienda_id into v_tienda from public.gd_pedidos where id = p_pedido;
+  select pt.precio into v_precio from public.gd_precio_tienda pt
+   where pt.tienda_id = v_tienda and pt.producto_id = p.id;
+  v_precio := coalesce(v_precio, p.precio, 0);
+  insert into public.gd_pedido_lineas
+    (id, pedido_id, producto_id, producto, categoria, precio, cantidad, importe, agregado_bodega)
+  values (gen_random_uuid(), p_pedido, p.id::text, p.nombre, p.categoria, v_precio, p_cantidad,
+          round(v_precio * p_cantidad, 2), true)
+  returning * into v;
+  perform public.gd_bodega_recalcula(p_pedido);
+  return to_jsonb(v);
+end $$;
+
+-- Terminar: solo con todo completo (lo quitado no cuenta).
+create or replace function public.gd_bodega_termina(p_pedido uuid)
+returns jsonb language plpgsql security definer set search_path to 'public' as $$
+declare v_falta integer;
+begin
+  if not public.gd_bodega_equipo() then raise exception 'Sin permiso'; end if;
+  select count(*) into v_falta from public.gd_pedido_lineas
+   where pedido_id = p_pedido and not quitado and surtido < cantidad;
+  if v_falta > 0 then
+    return jsonb_build_object('ok', false, 'faltan', v_falta);
+  end if;
+  perform public.gd_bodega_recalcula(p_pedido);
+  update public.gd_pedidos
+     set picking_fin = now(),
+         estado = case when estado in ('nuevo','preparando') then 'preparado' else estado end
+   where id = p_pedido;
+  return jsonb_build_object('ok', true);
+end $$;
+
+revoke all on function public.gd_bodega_equipo()                          from public, anon;
+revoke all on function public.gd_bodega_cantidad(uuid, integer)           from public, anon;
+revoke all on function public.gd_bodega_quita(uuid, boolean)              from public, anon;
+revoke all on function public.gd_bodega_agrega(uuid, uuid, integer)       from public, anon;
+grant execute on function public.gd_bodega_equipo()                       to authenticated;
+grant execute on function public.gd_bodega_cantidad(uuid, integer)        to authenticated;
+grant execute on function public.gd_bodega_quita(uuid, boolean)           to authenticated;
+grant execute on function public.gd_bodega_agrega(uuid, uuid, integer)    to authenticated;

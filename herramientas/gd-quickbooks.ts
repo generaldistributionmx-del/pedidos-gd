@@ -2,9 +2,11 @@
 //  gd-quickbooks — trae el catalogo directo de QuickBooks, sin archivo
 //
 //  QUE PUEDE Y QUE NO:
-//    - SOLO LEE de QuickBooks. Nunca escribe, nunca borra, nunca toca
-//      una factura ni un pago. Si Intuit le diera permiso de escribir,
-//      esta funcion no lo usa: no hay una sola llamada que no sea GET.
+//    - Lee de QuickBooks: catalogo, fotos y clientes.
+//    - ESCRIBE UNA SOLA COSA: el invoice de un pedido surtido en Bodega
+//      (accion "invoice"), y solo cuando el dueno lo aprieta despues de ver
+//      el ensayo. Manuel y Helen lo pidieron el 26 de octubre de 2026.
+//      Nunca borra, nunca toca pagos ni otras facturas.
 //    - Manuel puede cortarla cuando quiera, sin pedirmelo a mi:
 //      desde el panel ("Desconectar") o desde su propia cuenta de Intuit.
 //
@@ -492,6 +494,106 @@ async function ponFoto(token: string, realm: string, x: { prod: Record<string, a
   });
 }
 
+// ---------- el invoice de un pedido surtido en bodega ----------
+// Manuel y Helen, 26 de octubre de 2026: al terminar el picking se crea el
+// invoice en QuickBooks con lo que de verdad se surtio. Es la UNICA escritura
+// de esta funcion, y solo pasa cuando el dueno aprieta el boton despues de ver
+// el ensayo. El pedido guarda el Id del invoice: no se puede crear dos veces.
+async function planInvoice(token: string, realm: string, pedidoId: string) {
+  const ped = (await base(
+    `gd_pedidos?id=eq.${encodeURIComponent(pedidoId)}&select=id,folio,tienda,tienda_id,estado,es_prueba,` +
+    `picking_por,qb_invoice_id,qb_invoice_num,gd_pedido_lineas(id,producto_id,producto,precio,cantidad,surtido,quitado)`,
+  ))?.[0];
+  if (!ped) throw new Error("No encontre ese pedido.");
+
+  let tienda: Record<string, any> | null = null;
+  if (ped.tienda_id) {
+    tienda = (await base(`gd_tiendas?id=eq.${ped.tienda_id}&select=id,nombre,qb_id`))?.[0] ?? null;
+  }
+  const nombreTienda = String(tienda?.nombre ?? ped.tienda ?? "");
+
+  // El cliente: por su Id de QuickBooks si ya lo tenemos; si no, por nombre.
+  const clientes = await traeClientes(token, realm);
+  let cliente = tienda?.qb_id ? clientes.find((c) => String(c.Id) === String(tienda!.qb_id)) : undefined;
+  if (!cliente) {
+    const n = norm(nombreTienda);
+    const iguales = clientes.filter((c) => norm(limpia(c.DisplayName)) === n);
+    if (iguales.length === 1) cliente = iguales[0];
+  }
+
+  // Los productos: por nombre, que es como el refresh los da de alta.
+  const articulos = await traeArticulos(token, realm);
+  const porNombre = new Map<string, Record<string, any>>();
+  for (const a of articulos) {
+    if (a.Type === "Category") continue;
+    porNombre.set(norm(limpia(a.Name)), a);
+  }
+  const lineas = (ped.gd_pedido_lineas ?? [])
+    .filter((l: Record<string, any>) => !l.quitado)
+    .map((l: Record<string, any>) => {
+      const it = porNombre.get(norm(limpia(l.producto)));
+      const cant = Number(l.cantidad);
+      const precio = Number(l.precio);
+      return {
+        producto: l.producto, cantidad: cant, precio,
+        importe: Math.round(cant * precio * 100) / 100,
+        surtido: Number(l.surtido), item_id: it ? String(it.Id) : null,
+      };
+    });
+  const total = Math.round(lineas.reduce((s: number, l: any) => s + l.importe, 0) * 100) / 100;
+  const sinItem = lineas.filter((l: any) => !l.item_id).map((l: any) => l.producto);
+  const sinSurtir = lineas.filter((l: any) => l.surtido < l.cantidad).map((l: any) => l.producto);
+
+  const problemas: string[] = [];
+  if (ped.qb_invoice_id) problemas.push(`Este pedido ya tiene el invoice #${ped.qb_invoice_num ?? ped.qb_invoice_id} en QuickBooks.`);
+  if (!["preparado", "en_camino", "entregado", "pagado"].includes(ped.estado)) {
+    problemas.push("Primero hay que terminar el picking en Bodega.");
+  }
+  if (!cliente) problemas.push(`No encontre a "${nombreTienda}" como cliente en QuickBooks (tiene que llamarse igual).`);
+  if (sinItem.length) problemas.push(`No encontre en QuickBooks: ${sinItem.join(", ")}.`);
+  if (sinSurtir.length) problemas.push(`Faltan por surtir: ${sinSurtir.join(", ")}.`);
+  if (!lineas.length) problemas.push("El pedido no tiene productos.");
+
+  return {
+    ped, lineas, total, problemas,
+    resumen: {
+      folio: ped.folio,
+      tienda: nombreTienda,
+      cliente_qb: cliente ? limpia(cliente.DisplayName) : null,
+      productos: lineas.length,
+      piezas: lineas.reduce((s: number, l: any) => s + l.cantidad, 0),
+      total,
+      es_prueba: !!ped.es_prueba,
+      problemas,
+    },
+    clienteId: cliente ? String(cliente.Id) : null,
+  };
+}
+
+async function creaInvoice(token: string, realm: string, plan: Awaited<ReturnType<typeof planInvoice>>) {
+  const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Denver" });
+  const cuerpo = {
+    CustomerRef: { value: plan.clienteId },
+    TxnDate: hoy,
+    PrivateNote: `App General Distribution · folio ${plan.ped.folio}` +
+                 (plan.ped.picking_por ? ` · surtio ${plan.ped.picking_por}` : ""),
+    Line: plan.lineas.map((l: any) => ({
+      DetailType: "SalesItemLineDetail",
+      Amount: l.importe,
+      Description: l.producto,
+      SalesItemLineDetail: { ItemRef: { value: l.item_id }, Qty: l.cantidad, UnitPrice: l.precio },
+    })),
+  };
+  const r = await fetch(`${API_BASE}/v3/company/${realm}/invoice?minorversion=73`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify(cuerpo),
+  });
+  const t = await r.text();
+  if (!r.ok) throw new Error(`QuickBooks no acepto el invoice (${r.status}): ${t.slice(0, 400)}`);
+  return JSON.parse(t)?.Invoice;
+}
+
 // ---------- las funciones de la base, con la sesion de quien llamo ----------
 // A proposito se usa SU sesion y no la llave de servicio: asi la revision
 // de "solo el dueno" vive en un solo lugar, dentro de gd_qb_aplicar.
@@ -798,6 +900,51 @@ Deno.serve(async (req) => {
         });
       }
       return json({ ok: true, de_verdad: true, resumen: plan.resumen });
+    }
+
+    // --- el invoice de un pedido de bodega: primero el ensayo, luego de verdad ---
+    if (accion === "invoice") {
+      if (faltanSecretos()) {
+        return json({ ok: false, error: "Faltan los secretos QB_CLIENT_ID y QB_CLIENT_SECRET en Supabase." }, 400);
+      }
+      const pedidoId = String(cuerpo.pedido ?? "");
+      if (!pedidoId) return json({ ok: false, error: "Falta el pedido." }, 400);
+      const deVerdad = cuerpo.de_verdad === true;
+      const acceso = await accesoFresco();
+      const plan = await planInvoice(acceso.token, acceso.realm, pedidoId);
+      if (!deVerdad || plan.problemas.length) {
+        return json({ ok: !plan.problemas.length, de_verdad: false, resumen: plan.resumen });
+      }
+      // Se aparta el pedido ANTES de llamar a Intuit: si alguien aprieta dos
+      // veces, la segunda ya no encuentra el pedido libre.
+      const apartado = await base(
+        `gd_pedidos?id=eq.${encodeURIComponent(pedidoId)}&qb_invoice_id=is.null`,
+        { method: "PATCH", headers: { Prefer: "return=representation" },
+          body: JSON.stringify({ qb_invoice_id: "creando" }) },
+      );
+      if (!apartado?.length) return json({ ok: false, error: "Este pedido ya tiene invoice o se esta creando." }, 400);
+      let inv;
+      try {
+        inv = await creaInvoice(acceso.token, acceso.realm, plan);
+      } catch (e) {
+        await base(`gd_pedidos?id=eq.${encodeURIComponent(pedidoId)}`, {
+          method: "PATCH", body: JSON.stringify({ qb_invoice_id: null }),
+        }).catch(() => {});
+        throw e;
+      }
+      await base(`gd_pedidos?id=eq.${encodeURIComponent(pedidoId)}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          qb_invoice_id: String(inv?.Id ?? ""),
+          qb_invoice_num: inv?.DocNumber ? String(inv.DocNumber) : null,
+          qb_invoice_total: inv?.TotalAmt ?? plan.total,
+          qb_invoice_el: new Date().toISOString(),
+        }),
+      });
+      return json({
+        ok: true, de_verdad: true, resumen: plan.resumen,
+        invoice: { id: inv?.Id, numero: inv?.DocNumber ?? null, total: inv?.TotalAmt ?? plan.total },
+      });
     }
 
     return json({ ok: false, error: `No conozco la accion "${accion}".` }, 400);

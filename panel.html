@@ -169,33 +169,59 @@ h2{font-size:14px;text-transform:uppercase;letter-spacing:.5px;color:#6b7280;
 .bped{background:#fff;border-radius:10px;margin-bottom:8px;padding:13px;box-shadow:0 1px 2px rgba(16,24,40,.07);
   display:flex;justify-content:space-between;align-items:center;gap:10px;cursor:pointer}
 .bped .t{font-weight:700}
-.bped .m{font-size:13px;color:#6b7280;margin-top:2px}
+.bped .m{font-size:13px;color:#6b7280;margin-top:3px}
 .bbar{height:7px;background:#e5e7eb;border-radius:9px;overflow:hidden;margin-top:7px;width:140px;max-width:100%}
 .bbar i{display:block;height:100%;background:#16a34a}
 .prueba{display:inline-block;font-size:11px;font-weight:700;background:#fef3c7;color:#7c4a03;
   border-radius:5px;padding:1px 6px;margin-left:6px;vertical-align:middle}
+.bet{display:inline-block;font-size:11px;font-weight:700;border-radius:5px;padding:1px 6px;margin-right:4px}
+.bet.nuevo{background:#dbeafe;color:#1e40af}
+.bet.prep{background:#ffedd5;color:#9a3412}
+.bet.fin{background:#ede9fe;color:#5b21b6}
+.bet.inv{background:#dcfce7;color:#065f2b}
 .bhead{display:flex;align-items:center;gap:10px;margin-bottom:10px}
-.bvolver{border:1px solid #d5d9df;background:#fff;border-radius:7px;padding:8px 11px;font-size:14px}
+.bvolver{border:1px solid #d5d9df;background:#fff;border-radius:7px;padding:8px 11px;font-size:14px;flex:none}
+.bestado{border-radius:10px;padding:12px 14px;font-weight:800;font-size:18px;letter-spacing:.02em;margin-bottom:8px}
+.bestado small{display:block;font-weight:500;font-size:13px;letter-spacing:0;margin-top:2px}
+.bestado.nuevo{background:#dbeafe;color:#1e40af}
+.bestado.prep{background:#f97316;color:#fff}
+.bestado.fin{background:#16a34a;color:#fff}
+.btot{display:flex;gap:8px;margin-bottom:8px}
+.btot div{flex:1;background:#fff;border-radius:9px;padding:9px 11px}
+.btot span{display:block;font-size:12px;color:#6b7280}
+.btot b{font-size:20px;font-variant-numeric:tabular-nums}
 .bscan{width:100%;padding:16px;font-size:20px;border:3px solid #1f2937;border-radius:10px;margin:8px 0 0;
   font-variant-numeric:tabular-nums}
 .bscan:focus{outline:none;border-color:#2563eb}
 .bmsg{border-radius:10px;padding:14px;margin:10px 0;font-size:17px;font-weight:700;display:none;line-height:1.35}
 .bmsg.ok{display:block;background:#dcfce7;color:#065f2b}
 .bmsg.mal{display:block;background:#dc2626;color:#fff;font-size:19px}
-.bln{background:#fff;border-radius:9px;padding:11px 12px;margin-bottom:7px;border-left:6px solid #d1d5db;
+.bmsg.info{display:block;background:#eef2ff;color:#1e3a8a;font-size:14px;font-weight:500}
+.bln{background:#fff;border-radius:9px;padding:9px 10px;margin-bottom:7px;border-left:6px solid #d1d5db;
   display:flex;gap:10px;align-items:center}
 .bln.medio{border-left-color:#f59e0b}
 .bln.listo{border-left-color:#16a34a;background:#f0fdf4}
-.bln .cu{font-size:20px;font-weight:800;min-width:62px;text-align:center;font-variant-numeric:tabular-nums}
+.bln.quit{opacity:.55;border-left-color:#9ca3af}
+.bln.quit b{text-decoration:line-through}
+.bim{width:64px;height:64px;flex:none;border-radius:8px;background:#f3f4f6;overflow:hidden;
+  display:flex;align-items:center;justify-content:center}
+.bim img{width:100%;height:100%;object-fit:contain;background:#fff}
+.bim span{font-size:24px;font-weight:800;color:#9ca3af}
+.bln .cu{font-size:21px;font-weight:800;min-width:58px;text-align:center;font-variant-numeric:tabular-nums;flex:none}
 .bln .nm{flex:1;min-width:0}
 .bln .nm b{display:block}
 .bln .nm small{color:#6b7280;font-size:12px}
+.bln .nm small b.imp{display:inline;color:#111827}
 .bln .sc{color:#b45309}
-.bmano{border:1px solid #d5d9df;background:#fff;border-radius:7px;padding:6px 9px;font-size:13px;margin-top:5px}
+.bacc{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px}
+.bmano{border:1px solid #d5d9df;background:#fff;border-radius:7px;padding:6px 10px;font-size:13px}
+.bmano[disabled]{opacity:.4}
+.bmano.rojo{color:#991b1b;border-color:#fecaca}
 .bfin{width:100%;padding:15px;font-size:17px;font-weight:700;border:0;border-radius:10px;
   background:#16a34a;color:#fff;margin-top:8px}
 .bfin[disabled]{background:#9ca3af}
 .breset{background:none;border:0;color:#991b1b;text-decoration:underline;font-size:14px;margin-top:12px}
+.est.preparando{background:#ffedd5;color:#9a3412}
 </style>
 </head>
 <body>
@@ -273,8 +299,9 @@ h2{font-size:14px;text-transform:uppercase;letter-spacing:.5px;color:#6b7280;
         <h3>QuickBooks conectado &mdash; sin bajar archivo</h3>
         <p class="ayuda">Conectado una vez, el cat&aacute;logo se trae solo al apretar un
           bot&oacute;n: ya no hay que exportar nada.<br>
-          Esta conexi&oacute;n <b>s&oacute;lo lee</b> de QuickBooks. No escribe, no borra,
-          no toca facturas ni pagos. Y la puedes cortar aqu&iacute; mismo cuando quieras.</p>
+          Esta conexi&oacute;n <b>lee</b> el cat&aacute;logo y los clientes. <b>Solo escribe</b> una cosa:
+          el invoice de un pedido terminado en Bodega, cuando t&uacute; lo apruebas. No borra
+          ni toca pagos. Y la puedes cortar aqu&iacute; mismo cuando quieras.</p>
         <div class="msg" id="mQbApi"></div>
         <div id="qbApiEstado"><div class="cargando" style="padding:14px">Viendo c&oacute;mo est&aacute;&hellip;</div></div>
         <div id="qbApiRes"></div>
@@ -346,7 +373,7 @@ var KEY  = 'sb_publishable_0p52bWzvqzS87hCn_01xNw_sjm8N8wu';
 var tok = '', ref = '', dias = 7, PEDIDOS = [], esDueno = false, ESTADO = '';
 
 /* El camino del pedido. Cada paso lo marca una persona, a mano, cuando de verdad paso. */
-var PASOS = [['nuevo','Nuevo'],['preparado','Preparado'],['en_camino','En camino'],
+var PASOS = [['nuevo','Nuevo'],['preparando','Preparando'],['preparado','Preparado'],['en_camino','En camino'],
              ['entregado','Entregado'],['pagado','Pagado']];
 function etiqueta(e){
   for(var i=0;i<PASOS.length;i++){ if(PASOS[i][0] === e) return PASOS[i][1]; }
@@ -1349,7 +1376,7 @@ function desde(){
 function carga(){
   $('cuerpo').innerHTML = '<div class="cargando">Cargando&hellip;</div>';
   var u = SB + '/rest/v1/gd_pedidos?select=id,folio,tienda,nota,articulos,total,creado,estado,gd_pedido_lineas(producto,categoria,precio,cantidad,importe)'
-        + '&es_prueba=eq.false&order=creado.desc&limit=300';
+        + '&gd_pedido_lineas.quitado=eq.false&es_prueba=eq.false&order=creado.desc&limit=300';
   var d = desde();
   if(d) u += '&creado=gte.' + encodeURIComponent(d);
   if(ESTADO) u += '&estado=eq.' + ESTADO;
@@ -1467,8 +1494,10 @@ function pinta(){
    Pedido por Manuel y Helen (26/oct/2026): se pierde dinero cuando en bodega
    agarran el producto hermano (Carlos V chico por grande, mazapan 20/30 por
    48/12). Aqui cada pieza se escanea antes de empacarla y el codigo TIENE que
-   ser de un producto del pedido. El conteo lo guarda la base (gd_bodega_*). */
-var BPEDS = [], BPED = null, BPROD = null, BRESET = false;
+   ser de un producto del pedido. El conteo lo guarda la base (gd_bodega_*).
+   El camino: Nuevo -> Preparando (alguien ya surte) -> Terminada (preparado)
+   -> invoice en QuickBooks -> Lista para ruta (en_camino). */
+var BPEDS = [], BLISTOS = [], BPED = null, BPROD = null, BRESET = false, BQUITA = '', BINV = null;
 
 function bCod(s){ return String(s || '').replace(/\D/g, '').replace(/^0+/, ''); }
 /* Mismo criterio que la app: sin ceros adelante y con o sin el digito verificador. */
@@ -1476,7 +1505,7 @@ function bIgual(u, c){
   if(!u || !c) return false;
   return u === c || u.slice(0, -1) === c || c.slice(0, -1) === u;
 }
-function bEsc(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+function bEsc(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
 
 function bSonido(bien){
   try {
@@ -1500,13 +1529,16 @@ function bRpc(fn, cuerpo, ok, falla){
   });
 }
 
-/* El catalogo completo, una vez: para decir QUE se escaneo cuando no es del pedido. */
+/* El catalogo completo, una vez: fotos, codigos, y para decir QUE se escaneo. */
 function bCatalogo(listo){
   if(BPROD){ listo(); return; }
-  req('GET', SB + '/rest/v1/gd_productos?select=id,nombre,upc&limit=5000', null, true,
+  req('GET', SB + '/rest/v1/gd_productos?select=id,nombre,upc,foto,precio,activo&limit=5000', null, true,
     function(d){
       BPROD = {};
-      for(var i=0;i<(d||[]).length;i++) BPROD[d[i].id] = {n:d[i].nombre, u:bCod(d[i].upc), r:(d[i].upc || '')};
+      for(var i=0;i<(d||[]).length;i++){
+        BPROD[d[i].id] = {n:d[i].nombre, u:bCod(d[i].upc), r:(d[i].upc || ''), f:(d[i].foto || ''),
+                          p:(d[i].precio || 0), a:d[i].activo};
+      }
       listo();
     },
     function(st){
@@ -1515,39 +1547,64 @@ function bCatalogo(listo){
     });
 }
 
+function bFoto(id, nombre){
+  var pr = BPROD && BPROD[id];
+  if(pr && pr.f) return '<div class="bim"><img src="' + bEsc(pr.f) + '" loading="lazy" alt=""></div>';
+  return '<div class="bim"><span>' + bEsc(String(nombre || '?').charAt(0).toUpperCase()) + '</span></div>';
+}
+
 function cargaBodega(){
-  BPED = null;
+  BPED = null; BINV = null;
   $('bodega').innerHTML = '<div class="cargando">Cargando&hellip;</div>';
-  var u = SB + '/rest/v1/gd_pedidos?select=id,folio,tienda,articulos,total,creado,es_prueba,picking_por,' +
-          'gd_pedido_lineas(cantidad,surtido)&estado=eq.nuevo&order=creado.asc&limit=200';
-  req('GET', u, null, true,
-    function(d){ BPEDS = d || []; pintaBodega(); },
+  var sel = 'select=id,folio,tienda,articulos,total,creado,estado,es_prueba,picking_por,qb_invoice_id,qb_invoice_num,' +
+            'gd_pedido_lineas(cantidad,surtido,quitado)';
+  var hace = new Date(); hace.setDate(hace.getDate() - 7);
+  req('GET', SB + '/rest/v1/gd_pedidos?' + sel + '&estado=in.(nuevo,preparando)&order=creado.asc&limit=200', null, true,
+    function(d){
+      BPEDS = d || [];
+      req('GET', SB + '/rest/v1/gd_pedidos?' + sel + '&estado=eq.preparado&picking_fin=gte.' +
+          encodeURIComponent(hace.toISOString()) + '&order=picking_fin.desc&limit=100', null, true,
+        function(d2){ BLISTOS = d2 || []; pintaBodega(); },
+        function(){ BLISTOS = []; pintaBodega(); });
+    },
     function(st){
       if(st === 401){ refresca(cargaBodega, salir); return; }
       $('bodega').innerHTML = '<div class="vacio">No se pudieron cargar los pedidos.</div>';
     });
 }
 
+function bTarjeta(p){
+  var ls = p.gd_pedido_lineas || [], pz = 0, ya = 0, j;
+  for(j=0;j<ls.length;j++){
+    if(ls[j].quitado) continue;
+    pz += ls[j].cantidad; ya += Math.min(ls[j].surtido || 0, ls[j].cantidad);
+  }
+  var pct = pz ? Math.round(ya * 100 / pz) : 0;
+  var tag = p.estado === 'preparando' ? '<span class="bet prep">PREPARANDO</span>' :
+            p.estado === 'preparado' ? (p.qb_invoice_id && p.qb_invoice_id !== 'creando'
+                ? '<span class="bet inv">INVOICE #' + bEsc(p.qb_invoice_num || p.qb_invoice_id) + '</span>'
+                : '<span class="bet fin">TERMINADA &middot; falta invoice</span>') :
+            '<span class="bet nuevo">NUEVA</span>';
+  var h = '<div class="bped" data-bab="' + p.id + '"><div style="min-width:0">';
+  h += '<div class="t">' + bEsc(p.tienda) + (p.es_prueba ? '<span class="prueba">PRUEBA</span>' : '') + '</div>';
+  h += '<div class="m">' + tag + ' Folio ' + p.folio + ' &middot; ' + fecha(p.creado) +
+       (p.picking_por ? ' &middot; <b>' + bEsc(p.picking_por) + '</b>' : '') + '</div>';
+  if(p.estado !== 'preparado') h += '<div class="bbar"><i style="width:' + pct + '%"></i></div>';
+  h += '</div><div style="text-align:right;flex:none"><b style="font-size:17px">' + money(p.total) + '</b>' +
+       '<div class="m">' + ya + '/' + pz + ' piezas</div></div></div>';
+  return h;
+}
+
 function pintaBodega(){
-  var h = '<h2>Por surtir</h2>', i, j;
+  var h = '<h2>Por surtir</h2>', i;
   h += '<p class="ayuda" style="padding:0 3px;margin-top:-2px">Toca un pedido, escribe tu nombre ' +
        'y escanea <b>cada pieza</b> antes de empacarla. Si no es del pedido, no cuenta.</p>';
-  if(!BPEDS.length){
-    $('bodega').innerHTML = h + '<div class="vacio">No hay pedidos por surtir.<br>' +
-      'Los pedidos nuevos aparecen aqu&iacute; solos.</div>';
-    return;
-  }
-  for(i=0;i<BPEDS.length;i++){
-    var p = BPEDS[i], ls = p.gd_pedido_lineas || [], pz = 0, ya = 0;
-    for(j=0;j<ls.length;j++){ pz += ls[j].cantidad; ya += Math.min(ls[j].surtido || 0, ls[j].cantidad); }
-    var pct = pz ? Math.round(ya * 100 / pz) : 0;
-    h += '<div class="bped" data-bab="' + p.id + '"><div>';
-    h += '<div class="t">' + bEsc(p.tienda) + (p.es_prueba ? '<span class="prueba">PRUEBA</span>' : '') + '</div>';
-    h += '<div class="m">Folio ' + p.folio + ' &middot; ' + fecha(p.creado) +
-         (p.picking_por ? ' &middot; lo surte <b>' + bEsc(p.picking_por) + '</b>' : '') + '</div>';
-    h += '<div class="bbar"><i style="width:' + pct + '%"></i></div></div>';
-    h += '<div style="text-align:right"><b style="font-size:18px">' + ya + '/' + pz + '</b>' +
-         '<div class="m">piezas</div></div></div>';
+  if(!BPEDS.length) h += '<div class="vacio" style="padding:22px">No hay pedidos por surtir.<br>' +
+                         'Los pedidos nuevos aparecen aqu&iacute; solos.</div>';
+  for(i=0;i<BPEDS.length;i++) h += bTarjeta(BPEDS[i]);
+  if(BLISTOS.length){
+    h += '<h2>Terminadas (&uacute;ltimos 7 d&iacute;as)</h2>';
+    for(i=0;i<BLISTOS.length;i++) h += bTarjeta(BLISTOS[i]);
   }
   $('bodega').innerHTML = h;
 }
@@ -1555,12 +1612,13 @@ function pintaBodega(){
 function abreBodega(id){
   $('bodega').innerHTML = '<div class="cargando">Abriendo el pedido&hellip;</div>';
   bCatalogo(function(){
-    var u = SB + '/rest/v1/gd_pedidos?id=eq.' + id + '&select=id,folio,tienda,nota,total,creado,estado,es_prueba,' +
-            'picking_por,gd_pedido_lineas(id,producto_id,producto,precio,cantidad,surtido,surtido_mano)';
+    var u = SB + '/rest/v1/gd_pedidos?id=eq.' + id + '&select=id,folio,tienda,nota,total,articulos,creado,estado,es_prueba,' +
+            'picking_por,picking_fin,qb_invoice_id,qb_invoice_num,qb_invoice_total,' +
+            'gd_pedido_lineas(id,producto_id,producto,precio,cantidad,importe,surtido,surtido_mano,quitado,agregado_bodega,cantidad_pedida)';
     req('GET', u, null, true,
       function(d){
         if(!d || !d.length){ cargaBodega(); return; }
-        BPED = d[0]; BRESET = false;
+        BPED = d[0]; BRESET = false; BQUITA = ''; BINV = null;
         BPED.gd_pedido_lineas.sort(function(a, b){ return a.producto < b.producto ? -1 : 1; });
         pintaPicking('', '');
       },
@@ -1581,57 +1639,121 @@ function bNombre(){
   return $('bNom') ? $('bNom').value.replace(/^\s+|\s+$/g, '') : '';
 }
 
+/* Total y surtido en dinero, siempre sin lo quitado. */
+function bCuentas(){
+  var ls = BPED.gd_pedido_lineas, t = 0, ts = 0, pz = 0, ya = 0, i;
+  for(i=0;i<ls.length;i++){
+    var l = ls[i];
+    if(l.quitado) continue;
+    var s = Math.min(l.surtido || 0, l.cantidad);
+    t += l.precio * l.cantidad; ts += l.precio * s; pz += l.cantidad; ya += s;
+  }
+  return {total:t, surtido:ts, pz:pz, ya:ya};
+}
+
 function pintaPicking(msg, clase){
-  var p = BPED, ls = p.gd_pedido_lineas, i, pz = 0, ya = 0, todo = true;
+  var p = BPED, ls = p.gd_pedido_lineas, i;
+  var terminada = p.estado !== 'nuevo' && p.estado !== 'preparando';
   var nom = p.picking_por || '';
   if(!nom){ try { nom = localStorage.getItem('gd_bnom') || ''; } catch(e){} }
   if($('bNom')) nom = $('bNom').value;
+  var cu = bCuentas();
+
   var h = '<div class="bhead"><button class="bvolver" data-bvolver="1">&larr; Pedidos</button>';
-  h += '<div><div style="font-weight:800;font-size:17px">' + bEsc(p.tienda) +
+  h += '<div style="min-width:0"><div style="font-weight:800;font-size:17px">' + bEsc(p.tienda) +
        (p.es_prueba ? '<span class="prueba">PRUEBA</span>' : '') + '</div>';
   h += '<div style="color:#6b7280;font-size:13px">Folio ' + p.folio + ' &middot; ' + fecha(p.creado) + '</div></div></div>';
+
+  if(terminada){
+    h += '<div class="bestado fin">&#10003; ORDEN TERMINADA' +
+         (p.picking_por ? '<small>Surti&oacute; ' + bEsc(p.picking_por) + '</small>' : '') + '</div>';
+  } else if(p.estado === 'preparando'){
+    h += '<div class="bestado prep">PREPARANDO ORDEN&hellip;<small>' + cu.ya + ' de ' + cu.pz + ' piezas</small></div>';
+  } else {
+    h += '<div class="bestado nuevo">ORDEN NUEVA<small>Escribe tu nombre y escanea la primera pieza</small></div>';
+  }
+
+  h += '<div class="btot"><div><span>Total del pedido</span><b>' + money(cu.total) + '</b></div>' +
+       '<div><span>Ya surtido</span><b>' + money(cu.surtido) + '</b></div></div>';
+
   if(p.nota) h += '<div class="card" style="padding:10px 12px"><b>Nota:</b> ' + bEsc(p.nota) + '</div>';
-  h += '<input id="bNom" placeholder="Tu nombre (quien surte)" autocomplete="off" value="' +
-       bEsc(nom).replace(/"/g,'&quot;') + '" ' +
-       'style="width:100%;padding:12px;font-size:16px;border:1px solid #d5d9df;border-radius:8px">';
-  h += '<input id="bScan" class="bscan" placeholder="Escanea aqu&iacute;" autocomplete="off">';
+
+  if(!terminada){
+    h += '<input id="bNom" placeholder="Tu nombre (quien surte)" autocomplete="off" value="' + bEsc(nom) + '" ' +
+         'style="width:100%;padding:12px;font-size:16px;border:1px solid #d5d9df;border-radius:8px">';
+    h += '<input id="bScan" class="bscan" placeholder="Escanea aqu&iacute;" autocomplete="off">';
+  }
   h += '<div id="bMsg" class="bmsg ' + (clase || '') + '">' + (msg || '') + '</div>';
+
+  var quitados = '';
   for(i=0;i<ls.length;i++){
     var l = ls[i], s = Math.min(l.surtido || 0, l.cantidad), pr = BPROD[l.producto_id];
     var cod = pr ? pr.u : '';
-    pz += l.cantidad; ya += s;
-    if(s < l.cantidad) todo = false;
+    if(l.quitado){
+      quitados += '<div class="bln quit">' + bFoto(l.producto_id, l.producto) + '<div class="nm"><b>' + bEsc(l.producto) +
+                  '</b><small>Quitado &middot; ' + l.cantidad + ' &times; ' + money(l.precio) + '</small>' +
+                  (terminada ? '' : '<button class="bmano" data-bregresa="' + l.id + '">Regresarlo al pedido</button>') +
+                  '</div></div>';
+      continue;
+    }
     var est = s >= l.cantidad ? 'listo' : (s > 0 ? 'medio' : '');
-    h += '<div class="bln ' + est + '"><div class="cu">' + s + '/' + l.cantidad + '</div><div class="nm">';
-    h += '<b>' + bEsc(l.producto) + '</b><small>' + money(l.precio) + ' c/u &middot; ';
+    h += '<div class="bln ' + est + '">' + bFoto(l.producto_id, l.producto) + '<div class="nm">';
+    h += '<b>' + bEsc(l.producto) + '</b>';
+    h += '<small>' + money(l.precio) + ' c/u &middot; <b class="imp">' + money(l.precio * l.cantidad) + '</b> &middot; ';
     h += cod ? 'c&oacute;digo ' + bEsc(pr.r) : '<span class="sc">sin c&oacute;digo de barras</span>';
     if(l.surtido_mano) h += ' &middot; ' + l.surtido_mano + ' a mano';
+    if(l.agregado_bodega) h += ' &middot; <span class="sc">agregado en bodega</span>';
+    if(l.cantidad_pedida && l.cantidad_pedida !== l.cantidad) h += ' &middot; <span class="sc">ped&iacute;an ' + l.cantidad_pedida + '</span>';
     h += '</small>';
-    if(s < l.cantidad){
-      /* Ya se escaneo una pieza de verdad: las demas de la misma caja se pueden contar de un jalon. */
-      var escaneadas = s - (l.surtido_mano || 0);
-      if(cod && escaneadas > 0 && l.cantidad - s > 1)
-        h += '<button class="bmano" data-btodos="' + l.id + '">Contar los ' + (l.cantidad - s) + ' que faltan</button>';
-      if(!cod)
-        h += '<button class="bmano" data-bmano="' + l.id + '">Confirmar a mano (' + (l.cantidad - s) + ')</button>';
+    if(!terminada){
+      h += '<div class="bacc">';
+      if(s < l.cantidad){
+        /* Ya se escaneo una pieza de verdad: las demas de la misma caja se pueden contar de un jalon. */
+        var escaneadas = s - (l.surtido_mano || 0);
+        if(cod && escaneadas > 0 && l.cantidad - s > 1)
+          h += '<button class="bmano" data-btodos="' + l.id + '">Contar los ' + (l.cantidad - s) + ' que faltan</button>';
+        if(!cod)
+          h += '<button class="bmano" data-bmano="' + l.id + '">Confirmar a mano (' + (l.cantidad - s) + ')</button>';
+      }
+      h += '<button class="bmano" data-bmenos="' + l.id + '"' + (l.cantidad <= 1 ? ' disabled' : '') + '>&minus;</button>';
+      h += '<button class="bmano" data-bmas="' + l.id + '">+</button>';
+      h += '<button class="bmano rojo" data-bquita="' + l.id + '">' +
+           (BQUITA === l.id ? '&iquest;Seguro? Toca otra vez' : 'Quitar') + '</button>';
+      h += '</div>';
     }
-    h += '</div></div>';
+    h += '</div><div class="cu">' + s + '/' + l.cantidad + '</div></div>';
   }
-  h += '<button class="bfin" data-bfin="1"' + (todo ? '' : ' disabled') + '>' +
-       (todo ? '&#10003; Terminar picking' : 'Faltan ' + (pz - ya) + ' de ' + pz + ' piezas') + '</button>';
-  h += '<div style="text-align:center"><button class="breset" data-breset="1">' +
-       (BRESET ? '&iquest;Seguro? Toca otra vez para contar desde cero' : 'Volver a contar desde cero') +
-       '</button></div>';
+  h += quitados;
+
+  if(!terminada){
+    h += '<div class="card" style="margin-top:10px"><b>Agregar un producto</b>' +
+         '<input id="bBusca" placeholder="Escribe el nombre o escanea el c&oacute;digo" autocomplete="off" ' +
+         'style="width:100%;padding:11px;font-size:16px;border:1px solid #d5d9df;border-radius:8px;margin-top:7px">' +
+         '<div id="bRes"></div></div>';
+    h += '<button class="bfin" data-bfin="1"' + (cu.ya >= cu.pz && cu.pz > 0 ? '' : ' disabled') + '>' +
+         (cu.ya >= cu.pz && cu.pz > 0 ? '&#10003; Terminar orden' : 'Faltan ' + (cu.pz - cu.ya) + ' de ' + cu.pz + ' piezas') + '</button>';
+    h += '<div style="text-align:center"><button class="breset" data-breset="1">' +
+         (BRESET ? '&iquest;Seguro? Toca otra vez para contar desde cero' : 'Volver a contar desde cero') +
+         '</button></div>';
+  } else {
+    h += bCajaInvoice();
+  }
   $('bodega').innerHTML = h;
-  $('bScan').onkeydown = function(ev){
-    if(ev.keyCode !== 13) return;
-    if(ev.preventDefault) ev.preventDefault();
-    var v = $('bScan').value;
-    $('bScan').value = '';
-    bEscanea(v);
-  };
-  $('bNom').onchange = function(){ try { localStorage.setItem('gd_bnom', bNombre()); } catch(e){} };
-  if(nom) $('bScan').focus(); else $('bNom').focus();
+
+  if(!terminada){
+    $('bScan').onkeydown = function(ev){
+      if(ev.keyCode !== 13) return;
+      if(ev.preventDefault) ev.preventDefault();
+      var v = $('bScan').value;
+      $('bScan').value = '';
+      bEscanea(v);
+    };
+    $('bNom').onchange = function(){ try { localStorage.setItem('gd_bnom', bNombre()); } catch(e){} };
+    var bb = $('bBusca');
+    bb.oninput = bBuscar; bb.onkeyup = bBuscar;
+    bb.onkeydown = function(ev){ if(ev.keyCode === 13 && ev.preventDefault) ev.preventDefault(); };
+    if(nom) $('bScan').focus(); else $('bNom').focus();
+  }
 }
 
 function bAviso(msg, clase){
@@ -1645,13 +1767,15 @@ function bEscanea(txt){
   if(!c) return;
   var nom = bNombre();
   if(!nom){ bSonido(false); bAviso('Primero escribe tu nombre arriba.', 'mal'); $('bNom').focus(); return; }
-  if(BPED.picking_por !== nom){
+  if(BPED.picking_por !== nom || BPED.estado === 'nuevo'){
     BPED.picking_por = nom;
+    if(BPED.estado === 'nuevo') BPED.estado = 'preparando';
     try { localStorage.setItem('gd_bnom', nom); } catch(e){}
     bRpc('gd_bodega_empieza', {p_pedido: BPED.id, p_nombre: nom}, function(){});
   }
   var ls = BPED.gd_pedido_lineas, i, cual = null, lleno = null;
   for(i=0;i<ls.length;i++){
+    if(ls[i].quitado) continue;
     var pr = BPROD[ls[i].producto_id];
     if(!pr || !bIgual(pr.u, c)) continue;
     if(ls[i].surtido < ls[i].cantidad){ cual = ls[i]; break; }
@@ -1687,10 +1811,63 @@ function bSuma(l, n, mano){
     function(){ bSonido(false); bAviso('No se guard&oacute;. Revisa el internet y escanea otra vez.', 'mal'); });
 }
 
+/* Cambiar la cantidad, quitar o regresar: la base recalcula el total del pedido. */
+function bCambia(l, campos){
+  for(var k in campos){ if(campos.hasOwnProperty(k)) l[k] = campos[k]; }
+  pintaPicking('', '');
+}
+function bCantidad(id, d){
+  var l = bLinea(id);
+  if(!l) return;
+  var n = l.cantidad + d;
+  if(n < 1) return;
+  bRpc('gd_bodega_cantidad', {p_linea: id, p_cantidad: n},
+    function(r){ bCambia(l, {cantidad: r.cantidad, surtido: r.surtido, surtido_mano: r.surtido_mano,
+                             importe: r.importe, cantidad_pedida: r.cantidad_pedida}); },
+    function(){ bAviso('No se pudo cambiar la cantidad.', 'mal'); });
+}
+function bQuita(id, quitar){
+  var l = bLinea(id);
+  if(!l) return;
+  if(quitar && BQUITA !== id){ BQUITA = id; pintaPicking('', ''); return; }
+  BQUITA = '';
+  bRpc('gd_bodega_quita', {p_linea: id, p_quitar: quitar},
+    function(){ bCambia(l, {quitado: quitar}); },
+    function(){ bAviso('No se pudo.', 'mal'); });
+}
+
+function bBuscar(){
+  var v = $('bBusca').value.replace(/^\s+|\s+$/g, ''), out = [], k, n = 0;
+  if(v.length < 2){ $('bRes').innerHTML = ''; return; }
+  var c = /^\d{6,}$/.test(v) ? bCod(v) : '', q = v.toLowerCase();
+  for(k in BPROD){
+    if(!BPROD.hasOwnProperty(k) || !BPROD[k].a) continue;
+    var pr = BPROD[k];
+    if(c ? bIgual(pr.u, c) : pr.n.toLowerCase().indexOf(q) >= 0){ out.push(k); if(++n >= 8) break; }
+  }
+  var h = '';
+  for(var i=0;i<out.length;i++){
+    var p2 = BPROD[out[i]];
+    h += '<div class="bln" style="margin:7px 0 0">' + bFoto(out[i], p2.n) + '<div class="nm"><b>' + bEsc(p2.n) + '</b>' +
+         '<small>' + money(p2.p) + (p2.r ? ' &middot; ' + bEsc(p2.r) : '') + '</small></div>' +
+         '<button class="bmano" data-bagrega="' + out[i] + '">Agregar</button></div>';
+  }
+  if(!out.length) h = '<div class="ayuda" style="margin-top:7px">No encontr&eacute; nada con eso.</div>';
+  $('bRes').innerHTML = h;
+}
+function bAgrega(prodId){
+  bRpc('gd_bodega_agrega', {p_pedido: BPED.id, p_producto: prodId, p_cantidad: 1},
+    function(r){
+      BPED.gd_pedido_lineas.push(r);
+      pintaPicking('Agregado: ' + bEsc(r.producto) + ' (1). Ahora escan&eacute;alo.', 'ok');
+    },
+    function(){ bAviso('No se pudo agregar.', 'mal'); });
+}
+
 function bTermina(){
   bRpc('gd_bodega_termina', {p_pedido: BPED.id},
     function(r){
-      if(r && r.ok){ cargaBodega(); return; }
+      if(r && r.ok){ BPED.estado = 'preparado'; bSonido(true); pintaPicking('', ''); return; }
       bAviso('Todav&iacute;a faltan ' + (r ? r.faltan : '') + ' productos por surtir.', 'mal');
     },
     function(){ bAviso('No se pudo terminar. Revisa el internet.', 'mal'); });
@@ -1701,6 +1878,64 @@ function bReinicia(){
   bRpc('gd_bodega_reinicia', {p_pedido: BPED.id},
     function(){ abreBodega(BPED.id); },
     function(){ bAviso('No se pudo reiniciar.', 'mal'); });
+}
+
+/* ---- el invoice en QuickBooks: primero se revisa, luego se crea ---- */
+function bCajaInvoice(){
+  var p = BPED, h = '<div class="card binv"><h3 style="margin:0 0 6px">Invoice de QuickBooks</h3>';
+  if(p.qb_invoice_id && p.qb_invoice_id !== 'creando'){
+    h += '<div class="bestado fin" style="margin:4px 0 10px">&#10003; Invoice #' + bEsc(p.qb_invoice_num || p.qb_invoice_id) +
+         ' creado<small>' + money(p.qb_invoice_total || p.total) + '</small></div>';
+    if(p.estado === 'preparado')
+      h += '<button class="bfin" data-bruta="1">Empacado &middot; mandar a ruta</button>';
+    else
+      h += '<p class="ayuda">Este pedido ya va ' + etiqueta(p.estado).toLowerCase() + '.</p>';
+    return h + '</div>';
+  }
+  if(!BINV){
+    h += '<p class="ayuda">Se arma con lo que se surti&oacute;. Primero te digo c&oacute;mo va a quedar; ' +
+         'no se crea nada hasta el segundo bot&oacute;n.</p>' +
+         '<button class="bfin" style="background:#1f2937" data-binv="revisa">Revisar el invoice</button>';
+    return h + '</div>';
+  }
+  if(BINV === 'cargando') return h + '<div class="cargando" style="padding:16px">Hablando con QuickBooks&hellip;</div></div>';
+  var r = BINV.resumen || {};
+  h += '<div class="top">' +
+       '<div class="ln"><div class="a">Cliente en QuickBooks</div><div class="b">' + bEsc(r.cliente_qb || 'NO ENCONTRADO') + '</div></div>' +
+       '<div class="ln"><div class="a">Productos</div><div class="b">' + (r.productos || 0) + ' (' + (r.piezas || 0) + ' piezas)</div></div>' +
+       '<div class="ln"><div class="a"><b>Total</b></div><div class="b"><b>' + money(r.total || 0) + '</b></div></div></div>';
+  if(r.problemas && r.problemas.length){
+    h += '<div class="bmsg mal" style="font-size:15px">' + r.problemas.map(bEsc).join('<br>') + '</div>' +
+         '<button class="bmano" data-binv="revisa">Revisar otra vez</button>';
+  } else {
+    if(r.es_prueba) h += '<div class="bmsg info" style="display:block">Este pedido es de PRUEBA: el invoice ' +
+                         'se crear&iacute;a de verdad en QuickBooks.</div>';
+    h += '<button class="bfin" data-binv="crea">S&iacute;, crear el invoice de ' + money(r.total || 0) + '</button>';
+  }
+  return h + '</div>';
+}
+function bInvoice(deVerdad){
+  BINV = 'cargando'; pintaPicking('', '');
+  req('POST', SB + '/functions/v1/gd-quickbooks', {accion: 'invoice', pedido: BPED.id, de_verdad: deVerdad}, true,
+    function(d){
+      if(deVerdad && d.invoice){
+        BPED.qb_invoice_id = String(d.invoice.id); BPED.qb_invoice_num = d.invoice.numero;
+        BPED.qb_invoice_total = d.invoice.total; BINV = null; bSonido(true);
+        pintaPicking('', '');
+        return;
+      }
+      BINV = d; pintaPicking('', '');
+    },
+    function(st, d){
+      if(st === 401 && !(d && d.error)){ refresca(function(){ bInvoice(deVerdad); }, salir); return; }
+      BINV = {resumen: {problemas: [(d && d.error) ? d.error : 'No se pudo hablar con QuickBooks.']}};
+      pintaPicking('', '');
+    });
+}
+/* Empacado: el mismo cambio de estado que en la pestana Pedidos (queda en el historial). */
+function bRuta(){
+  mueveEstado(BPED.id, 'en_camino');
+  cargaBodega();
 }
 
 /* ---- eventos ---- */
@@ -1735,6 +1970,7 @@ document.addEventListener('click', function(e){
       var bab = el.getAttribute('data-bab');
       if(bab){ abreBodega(bab); return; }
       if(el.getAttribute('data-bvolver')){ cargaBodega(); return; }
+      if(el.disabled && el.className.indexOf('bmano') >= 0) return;
       var bmn = el.getAttribute('data-bmano');
       if(bmn){ var lm = bLinea(bmn);
                if(lm){ if(!bNombre()){ bAviso('Primero escribe tu nombre arriba.', 'mal'); return; }
@@ -1742,6 +1978,19 @@ document.addEventListener('click', function(e){
                return; }
       var btd = el.getAttribute('data-btodos');
       if(btd){ var lt = bLinea(btd); if(lt) bSuma(lt, lt.cantidad - lt.surtido, false); return; }
+      var bme = el.getAttribute('data-bmenos');
+      if(bme){ bCantidad(bme, -1); return; }
+      var bma = el.getAttribute('data-bmas');
+      if(bma){ bCantidad(bma, 1); return; }
+      var bqu = el.getAttribute('data-bquita');
+      if(bqu){ bQuita(bqu, true); return; }
+      var bre = el.getAttribute('data-bregresa');
+      if(bre){ bQuita(bre, false); return; }
+      var bag = el.getAttribute('data-bagrega');
+      if(bag){ bAgrega(bag); return; }
+      var biv = el.getAttribute('data-binv');
+      if(biv){ bInvoice(biv === 'crea'); return; }
+      if(el.getAttribute('data-bruta')){ bRuta(); return; }
       if(el.getAttribute('data-bfin')){ if(!el.disabled) bTermina(); return; }
       if(el.getAttribute('data-breset')){ bReinicia(); return; }
       var sw = el.getAttribute('data-sw');
