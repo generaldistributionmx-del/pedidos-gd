@@ -1206,3 +1206,7 @@ insert into public.gd_qb_valores (campo_id, campo, rol, valor, veces) values
   ('manual','Ruta','ruta','Ruta Salt Lake City',0),
   ('manual','Ruta','ruta','Ruta Foránea',0)
 on conflict (campo_id, valor) do nothing;
+
+-- La liga para clientes lejanos (pedir.html), Manuel 27/oct/2026.
+alter table public.gd_pedidos add column if not exists origen text;
+comment on column public.gd_pedidos.origen is 'cliente = lo hizo el propio cliente con la liga pedir.html (sin vendedor). null = vendedor o tendero con su link.';

@@ -256,7 +256,7 @@ function subirUno(ped, hecho){
   post('gd_pedidos',
     {id:ped.id, tienda:ped.tienda, tienda_id:(ped.tienda_id || null), nota:ped.nota,
      articulos:ped.articulos, total:ped.total, es_prueba:false,
-     vendedor:(ped.vendedor || null), ruta:(ped.ruta || null)},
+     vendedor:(ped.vendedor || null), ruta:(ped.ruta || null), origen:(ped.origen || null)},
     function(){
       if(!ped.lineas || !ped.lineas.length){ hecho(true); return; }
       post('gd_pedido_lineas', ped.lineas, function(){ hecho(true); }, function(){ hecho(false); });
@@ -290,7 +290,8 @@ function guardarPedido(){
   var nt = document.getElementById('nota').value;
   var ped = {id:pid, tienda:document.getElementById('tienda').value, tienda_id:TIENDA_ID,
              nota:(nt ? nt : null), articulos:n, total:Math.round(tot*100)/100, lineas:lineas,
-             vendedor:vrVal('vendedor'), ruta:vrVal('ruta')};
+             vendedor:(MODO_CLIENTE ? '' : vrVal('vendedor')), ruta:(MODO_CLIENTE ? '' : vrVal('ruta')),
+             origen:(MODO_CLIENTE ? 'cliente' : null)};
   var q = cola(); q.push(ped); ponCola(q);
   pintaPend(); vaciarCola();
 }
@@ -305,6 +306,11 @@ var P = [{"i":3661229359181,"t":"Adams Bubbaloo Menta. 50 pz","p":6.49,"c":"Dulc
 var CATS = ["Dulces", "Abarrotes", "Bebidas", "Botanas", "Otros"];
 var cart = {}, cat = '', q = '', shown = [];
 var TIENDA_ID = null;   /* cuando el link trae ?t=codigo, el tendero ya no escribe nada */
+/* La liga para clientes lejanos (pedir.html -> ?cliente=1), Manuel 27/oct/2026:
+   el cliente escribe el nombre de su tienda como quiera, ve el precio de
+   catalogo, no puede cambiar precios, no hay ruta ni vendedor, y el pedido
+   cae al panel marcado como CLIENTE para que Helen lo revise. */
+var MODO_CLIENTE = /[?&]cliente=1/.test(window.location.search);
 /* El precio que le toca a ESTA tienda: {id del producto: precio}.
    Sale de gd_precios_de_la_tienda, que junta lo que se le puso a proposito
    y lo ultimo que de verdad se le cobro en un pedido anterior. */
@@ -1012,9 +1018,23 @@ function vrLista(){
   };
   try { x.send(null); } catch(e){}
 }
+if(MODO_CLIENTE){
+  /* Sin sesion de equipo: ni lapiz de precios, ni lista de tiendas. */
+  soyDelEquipo = function(){ return false; };
+  var vrC = document.getElementById('vr'); if(vrC) vrC.style.display = 'none';
+  var beC = document.getElementById('bent'); if(beC) beC.style.display = 'none';
+  var tiC = document.getElementById('tienda');
+  tiC.placeholder = 'Nombre de tu tienda o negocio';
+  var suC = document.querySelector('.hd .sub'); if(suC) suC.innerHTML = 'Haz tu pedido';
+  document.getElementById('nota').placeholder = 'Observaciones: lo que nos quieras decir de tu pedido (opcional)';
+  document.getElementById('wa').innerHTML = 'Enviar mi pedido';
+  try { document.title = 'Haz tu pedido \u00b7 General Distribution'; } catch(e){}
+  render();
+}
+
 (function(){
   /* Con el link de una tienda (?t=) el que pide es el tendero: no le toca escoger ruta. */
-  if(param('t')){ document.getElementById('vr').style.display = 'none'; return; }
+  if(param('t') || MODO_CLIENTE){ document.getElementById('vr').style.display = 'none'; return; }
   var r = '', v = '';
   try { r = localStorage.getItem('gd_ruta') || ''; v = localStorage.getItem('gd_vend') || ''; } catch(e){}
   var sel = document.getElementById('ruta');
@@ -1074,6 +1094,12 @@ document.getElementById('wa').onclick = function(){
     return;
   }
   guardarPedido();
+  if(MODO_CLIENTE){
+    aviso('&#10003; <b>&iexcl;Listo! Tu pedido ya lleg&oacute; a General Distribution.</b> ' +
+          'Te contactamos para confirmarlo. Gracias.');
+    document.getElementById('nuevo').style.display = 'block';
+    return;
+  }
   aviso('&#10003; <b>Pedido guardado.</b> Ahora se abre WhatsApp: ah\u00ed dale <b>enviar</b>.');
   document.getElementById('nuevo').style.display = 'block';
   window.open('https://wa.me/' + WHATSAPP + '?text=' + encodeURIComponent(texto()), '_blank');
