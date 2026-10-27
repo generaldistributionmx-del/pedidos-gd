@@ -638,11 +638,30 @@ async function planInvoice(token: string, realm: string, pedidoId: string) {
   };
 }
 
+// QuickBooks de Manuel usa numeros propios de invoice (8850...): si no se
+// manda DocNumber, el invoice queda SIN numero. Se toma el mas alto de los
+// ultimos y se le suma uno. (Paso con el primer invoice, 26/oct/2026.)
+async function siguienteNumero(token: string, realm: string) {
+  const q = "select DocNumber from Invoice orderby MetaData.CreateTime desc maxresults 200";
+  const r = await fetch(`${API_BASE}/v3/company/${realm}/query?query=${encodeURIComponent(q)}&minorversion=75`,
+    { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+  const t = await r.text();
+  if (!r.ok) throw new Error(`QuickBooks respondio ${r.status} al pedir los numeros de invoice: ${t.slice(0, 300)}`);
+  let max = 0;
+  for (const inv of JSON.parse(t)?.QueryResponse?.Invoice ?? []) {
+    const n = Number(String(inv.DocNumber ?? "").trim());
+    if (Number.isInteger(n) && n > max && n < 10_000_000) max = n;
+  }
+  return max ? String(max + 1) : null;
+}
+
 async function creaInvoice(token: string, realm: string, plan: Awaited<ReturnType<typeof planInvoice>>) {
   const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Denver" });
+  const numero = await siguienteNumero(token, realm);
   const cuerpo = {
     CustomerRef: { value: plan.clienteId },
     TxnDate: hoy,
+    ...(numero ? { DocNumber: numero } : {}),
     ...(plan.extras.length ? { CustomField: plan.extras } : {}),
     PrivateNote: `App General Distribution · folio ${plan.ped.folio}` +
                  (plan.ped.picking_por ? ` · surtio ${plan.ped.picking_por}` : ""),
