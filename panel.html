@@ -222,6 +222,13 @@ h2{font-size:14px;text-transform:uppercase;letter-spacing:.5px;color:#6b7280;
 .bfin[disabled]{background:#9ca3af}
 .breset{background:none;border:0;color:#991b1b;text-decoration:underline;font-size:14px;margin-top:12px}
 .est.preparando{background:#ffedd5;color:#9a3412}
+.rtab{overflow-x:auto;background:#fff;border-radius:10px;box-shadow:0 1px 2px rgba(16,24,40,.07)}
+.rtab table{border-collapse:collapse;width:100%;font-size:14px;font-variant-numeric:tabular-nums}
+.rtab th,.rtab td{padding:10px 11px;text-align:right;border-top:1px solid #eef0f3;white-space:nowrap}
+.rtab th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#6b7280;border-top:0}
+.rtab th:first-child,.rtab td:first-child{text-align:left}
+.rtab tbody tr{cursor:pointer}
+.rtab tbody tr.on{background:#eff6ff}
 .bsrow{display:flex;gap:7px;align-items:stretch;margin-top:8px}
 .bsrow .bscan{margin:0;flex:1;min-width:0;width:auto}
 .bcam{flex:none;width:62px;border:0;border-radius:10px;background:#1f2937;color:#fff;font-size:26px}
@@ -262,6 +269,7 @@ h2{font-size:14px;text-transform:uppercase;letter-spacing:.5px;color:#6b7280;
     <button class="tab" data-sec="bodega">Bodega</button>
     <button class="tab" data-sec="tiendas">Tiendas</button>
     <button class="tab" data-sec="productos">Productos</button>
+    <button class="tab" data-sec="reportes" id="tabReportes" style="display:none">Reportes</button>
     <button class="tab" data-sec="equipo" id="tabEquipo" style="display:none">Equipo</button>
     <button class="tab" data-sec="cuenta">Mi cuenta</button>
   </div>
@@ -280,6 +288,10 @@ h2{font-size:14px;text-transform:uppercase;letter-spacing:.5px;color:#6b7280;
 
     <div class="panel-sec" id="sec-bodega">
       <div id="bodega"><div class="cargando">Cargando&hellip;</div></div>
+    </div>
+
+    <div class="panel-sec" id="sec-reportes">
+      <div id="reportes"><div class="cargando">Cargando&hellip;</div></div>
     </div>
 
     <div class="panel-sec" id="sec-tiendas">
@@ -477,6 +489,7 @@ function quienSoy(){
         $('quien').innerHTML = d[0].nombre + (d[0].rol === 'dueno' ? '' : ' &middot; ' + d[0].rol);
         esDueno = (d[0].rol === 'dueno');
         $('tabEquipo').style.display = esDueno ? 'inline-block' : 'none';
+        $('tabReportes').style.display = esDueno ? 'inline-block' : 'none';
         $('cardQb').style.display = esDueno ? 'block' : 'none';
         $('cardQbApi').style.display = esDueno ? 'block' : 'none';
         if(esDueno) qbApiEstado();
@@ -1963,6 +1976,115 @@ function bRuta(){
   cargaBodega();
 }
 
+/* ---- Reportes de bodega (solo el dueno) ----
+   Manuel, 26/oct/2026: cuantos pedidos surtio cada quien y cuanto se tardo,
+   para llevar el control de las horas de trabajo. El tiempo cuenta desde la
+   primera pieza escaneada hasta que se aprieta "Terminar orden". */
+var RDIAS = 7, RPRUEBA = false, RDATOS = [], RVIVOS = [], RQUIEN = '';
+
+function rDur(ms){
+  if(!(ms > 0)) return '0 min';
+  var m = Math.round(ms / 60000), h = Math.floor(m / 60);
+  m = m % 60;
+  return h ? h + ' h ' + (m < 10 ? '0' : '') + m + ' min' : m + ' min';
+}
+function rHora(iso){
+  var d = new Date(iso), hh = d.getHours(), mm = d.getMinutes(), ap = hh >= 12 ? 'pm' : 'am';
+  hh = hh % 12; if(hh === 0) hh = 12;
+  return hh + ':' + (mm < 10 ? '0' : '') + mm + ' ' + ap;
+}
+function rLlave(n){ return String(n || 'Sin nombre').replace(/^\s+|\s+$/g, '').toLowerCase(); }
+
+function cargaReportes(){
+  $('reportes').innerHTML = '<div class="cargando">Cargando&hellip;</div>';
+  var u = SB + '/rest/v1/gd_pedidos?select=id,folio,tienda,articulos,total,es_prueba,picking_por,picking_inicio,picking_fin' +
+          '&picking_fin=not.is.null&order=picking_fin.desc&limit=3000';
+  if(RDIAS){
+    var d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate() - (RDIAS - 1));
+    u += '&picking_fin=gte.' + encodeURIComponent(d.toISOString());
+  }
+  if(!RPRUEBA) u += '&es_prueba=eq.false';
+  req('GET', u, null, true,
+    function(d){
+      RDATOS = d || [];
+      req('GET', SB + '/rest/v1/gd_pedidos?select=id,folio,tienda,picking_por,picking_inicio,es_prueba' +
+                 '&estado=eq.preparando&picking_inicio=not.is.null&order=picking_inicio.asc&limit=100', null, true,
+        function(v){ RVIVOS = v || []; pintaReportes(); },
+        function(){ RVIVOS = []; pintaReportes(); });
+    },
+    function(st){
+      if(st === 401){ refresca(cargaReportes, salir); return; }
+      $('reportes').innerHTML = '<div class="vacio">No se pudo cargar el reporte.</div>';
+    });
+}
+
+function pintaReportes(){
+  var ops = [[1,'Hoy'],[7,'7 d&iacute;as'],[30,'30 d&iacute;as'],[0,'Todo']], h = '<div class="chips">', i;
+  for(i=0;i<ops.length;i++)
+    h += '<button class="chip' + (RDIAS === ops[i][0] ? ' on' : '') + '" data-rd="' + ops[i][0] + '">' + ops[i][1] + '</button>';
+  h += '<button class="chip' + (RPRUEBA ? ' on' : '') + '" data-rp="1">Incluir pruebas</button></div>';
+
+  /* por persona */
+  var gente = {}, orden = [], tPz = 0, tMs = 0;
+  for(i=0;i<RDATOS.length;i++){
+    var p = RDATOS[i], k = rLlave(p.picking_por);
+    var ms = (p.picking_inicio && p.picking_fin) ? (new Date(p.picking_fin) - new Date(p.picking_inicio)) : 0;
+    if(!gente[k]){ gente[k] = {n: p.picking_por || 'Sin nombre', ped: 0, pz: 0, ms: 0, din: 0, lista: []}; orden.push(k); }
+    var g = gente[k];
+    g.ped++; g.pz += p.articulos || 0; g.ms += ms; g.din += parseFloat(p.total) || 0;
+    g.lista.push({p: p, ms: ms});
+    tPz += p.articulos || 0; tMs += ms;
+  }
+  orden.sort(function(a, b){ return gente[b].ped - gente[a].ped; });
+
+  h += '<div class="tiles"><div class="tile"><b>' + RDATOS.length + '</b><span>pedidos surtidos</span></div>' +
+       '<div class="tile"><b>' + tPz + '</b><span>piezas</span></div>' +
+       '<div class="tile"><b style="font-size:19px">' + rDur(tMs) + '</b><span>de trabajo</span></div></div>';
+
+  if(RVIVOS.length){
+    h += '<h2>Surtiendo ahora</h2><div class="top">';
+    for(i=0;i<RVIVOS.length;i++){
+      var v = RVIVOS[i];
+      h += '<div class="ln"><div class="a"><b>' + bEsc(v.picking_por || 'Sin nombre') + '</b> &middot; ' + bEsc(v.tienda) +
+           ' <span style="color:#6b7280">(folio ' + v.folio + ', empez&oacute; ' + rHora(v.picking_inicio) + ')</span></div>' +
+           '<div class="b">' + rDur(new Date() - new Date(v.picking_inicio)) + '</div></div>';
+    }
+    h += '</div>';
+  }
+
+  h += '<h2>Por persona</h2>';
+  if(!orden.length){
+    h += '<div class="vacio" style="padding:22px">Nadie ha terminado un pedido en Bodega en este periodo.</div>';
+  } else {
+    h += '<div class="rtab"><table><thead><tr><th>Quien</th><th>Pedidos</th><th>Piezas</th><th>Tiempo</th>' +
+         '<th>Promedio</th><th>Piezas/hora</th></tr></thead><tbody>';
+    for(i=0;i<orden.length;i++){
+      var g2 = gente[orden[i]];
+      var porHora = g2.ms > 0 ? Math.round(g2.pz / (g2.ms / 3600000)) : 0;
+      h += '<tr data-rq="' + bEsc(orden[i]) + '" class="' + (RQUIEN === orden[i] ? 'on' : '') + '">' +
+           '<td><b>' + bEsc(g2.n) + '</b></td><td>' + g2.ped + '</td><td>' + g2.pz + '</td><td>' + rDur(g2.ms) + '</td>' +
+           '<td>' + rDur(g2.ms / g2.ped) + '</td><td>' + porHora + '</td></tr>';
+    }
+    h += '</tbody></table></div>';
+    h += '<p class="ayuda" style="padding:0 3px">El tiempo cuenta desde la <b>primera pieza escaneada</b> ' +
+         'hasta que se aprieta <b>Terminar orden</b>. Toca a alguien para ver sus pedidos.</p>';
+  }
+
+  if(RQUIEN && gente[RQUIEN]){
+    var gq = gente[RQUIEN];
+    h += '<h2>Pedidos de ' + bEsc(gq.n) + '</h2><div class="top">';
+    for(i=0;i<gq.lista.length;i++){
+      var x = gq.lista[i];
+      h += '<div class="ln"><div class="a"><b>' + bEsc(x.p.tienda) + '</b>' + (x.p.es_prueba ? '<span class="prueba">PRUEBA</span>' : '') +
+           '<div style="color:#6b7280;font-size:13px">Folio ' + x.p.folio + ' &middot; ' + fecha(x.p.picking_fin) +
+           ' &middot; ' + rHora(x.p.picking_inicio) + ' a ' + rHora(x.p.picking_fin) + ' &middot; ' + (x.p.articulos || 0) + ' piezas</div></div>' +
+           '<div class="b"><b>' + rDur(x.ms) + '</b></div></div>';
+    }
+    h += '</div>';
+  }
+  $('reportes').innerHTML = h;
+}
+
 /* ---- La camara del telefono como escaner en Bodega (26/oct/2026) ----
    Igual que en la app de pedidos: el lector se baja solo al apretar el
    boton. Despues de cada lectura la camara se PAUSA y enseña si estuvo bien
@@ -2059,11 +2181,17 @@ document.addEventListener('click', function(e){
         $('sec-' + sec).className = 'panel-sec on';
         if(sec === 'equipo')    cargaEquipo();
         if(sec === 'bodega')    cargaBodega();
+        if(sec === 'reportes')  cargaReportes();
         if(sec === 'tiendas')   cargaTiendas();
         if(sec === 'productos'){ pchips(); cargaProductos(); }
         window.scrollTo(0,0);
         return;
       }
+      var rd = el.getAttribute('data-rd');
+      if(rd !== null && rd !== undefined && el.className.indexOf('chip') >= 0){ RDIAS = parseInt(rd, 10); cargaReportes(); return; }
+      if(el.getAttribute('data-rp') && el.className.indexOf('chip') >= 0){ RPRUEBA = !RPRUEBA; cargaReportes(); return; }
+      var rq = el.getAttribute('data-rq');
+      if(rq !== null && rq !== undefined){ RQUIEN = (RQUIEN === rq) ? '' : rq; pintaReportes(); return; }
       var bab = el.getAttribute('data-bab');
       if(bab){ abreBodega(bab); return; }
       if(el.getAttribute('data-bvolver')){ cargaBodega(); return; }
