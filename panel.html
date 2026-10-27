@@ -757,7 +757,11 @@ function subeFoto(prodId, blob, listo, falla){
     if(x.status >= 200 && x.status < 300){
       /* el ?v= obliga al telefono a pedir la nueva y no la que ya tenia guardada */
       listo(SB + '/storage/v1/object/public/' + ruta + '?v=' + (new Date()).getTime());
-    } else if(x.status === 401){ falla(401); }
+    } else if(x.status === 401 || /exp|jwt|Unauthorized/i.test(x.responseText || '')){
+      /* Con la sesion vencida, las fotos NO contestan 401 sino 400
+         ("exp claim timestamp check failed"). Se trata igual que 401. */
+      falla(401);
+    }
     else { falla(x.status); }
   };
   x.send(blob);
@@ -778,7 +782,13 @@ function tomoFoto(ev){
 
   function mal(cod){
     if(caja) caja.className = 'im';
-    if(cod === 401){ refresca(function(){}, salir); aviso('mProd','Tu sesi&oacute;n venci&oacute;. Entra otra vez.', false); return; }
+    /* Sesion vencida: se renueva y se vuelve a intentar UNA vez, sin que nadie haga nada. */
+    if(cod === 401 && !ev.reintento){
+      ev.reintento = true;
+      refresca(function(){ tomoFoto(ev); }, salir);
+      return;
+    }
+    if(cod === 401){ aviso('mProd','Tu sesi&oacute;n venci&oacute;. Entra otra vez.', false); return; }
     aviso('mProd', 'No se pudo subir la foto' + (cod ? ' (' + cod + ')' : '') +
                    '. Int&eacute;ntalo otra vez.', false);
   }
