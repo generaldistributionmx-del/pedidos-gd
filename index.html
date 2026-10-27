@@ -53,6 +53,15 @@ header{background:#1f2937;color:#fff;padding:10px 12px;position:sticky;top:0;z-i
 .dsd{margin-top:5px;font-size:12px;opacity:.75}
 .tools{background:#fff;padding:9px 12px;border-bottom:1px solid #e3e6ea;position:sticky;top:0;z-index:40}
 #q{width:100%;padding:11px 12px;font-size:16px;border:1px solid #d5d9df;border-radius:8px;background:#f8f9fa}
+.qrow{display:flex;gap:7px}
+.qrow #q{flex:1;min-width:0;width:auto}
+#bCam{flex:none;width:50px;border:0;border-radius:8px;background:#1f2937;color:#fff;font-size:21px;line-height:1}
+.cam{display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:200;background:rgba(0,0,0,.92);
+  padding:16px;text-align:center;color:#fff}
+.cam.on{display:block}
+#camVista{width:100%;max-width:520px;margin:10px auto 0;border-radius:10px;overflow:hidden;background:#000;min-height:220px}
+#camMsg{margin:14px 0;font-size:17px;font-weight:700}
+#camCerrar{padding:13px 26px;font-size:17px;border:0;border-radius:9px;background:#fff;color:#111;font-weight:700}
 .chips{display:block;white-space:nowrap;overflow-x:auto;margin-top:9px;padding-bottom:2px}
 .chip{display:inline-block;padding:7px 13px;margin-right:6px;border-radius:999px;background:#eef0f3;
       color:#48505a;font-size:13px;font-weight:600;border:0}
@@ -144,7 +153,10 @@ header{background:#1f2937;color:#fff;padding:10px 12px;position:sticky;top:0;z-i
 </header>
 
 <div class="tools">
-  <input id="q" placeholder="Buscar dulce, bebida, botana..." autocomplete="off">
+  <div class="qrow">
+    <input id="q" placeholder="Buscar dulce, bebida, botana..." autocomplete="off">
+    <button id="bCam" type="button" aria-label="Leer el c&oacute;digo con la c&aacute;mara">&#128247;</button>
+  </div>
   <div class="chips" id="chips"></div>
 </div>
 
@@ -172,6 +184,12 @@ header{background:#1f2937;color:#fff;padding:10px 12px;position:sticky;top:0;z-i
     <button class="big nuevo" id="nuevo">Empezar otro pedido</button>
     <button class="big cl" id="cl">Vaciar el pedido</button>
   </div>
+</div>
+
+<div class="cam" id="cam">
+  <div id="camVista"></div>
+  <div id="camMsg">Prendiendo la c&aacute;mara&hellip;</div>
+  <button id="camCerrar" type="button">Cerrar</button>
 </div>
 
 <script>
@@ -866,6 +884,67 @@ document.addEventListener('click', function(e){
 var qEl = document.getElementById('q');
 function onQ(){ if(q !== qEl.value){ q = qEl.value; render(); } }
 qEl.onkeyup = onQ; qEl.oninput = onQ; qEl.onchange = onQ;
+
+/* ---- La camara del telefono como escaner (Manuel y Helen, 26/oct/2026) ----
+   Para no tener que comprar escaneres. El lector se baja SOLO cuando se
+   aprieta el boton: los telefonos viejos que nunca lo usan no cargan nada.
+   Lo que lee se pone en el buscador, igual que si lo hubiera escrito el
+   escaner, y la busqueda por codigo de barras hace lo demas. */
+var CAM = null;
+function camMsg(t){ document.getElementById('camMsg').innerHTML = t; }
+function camLib(ok, falla){
+  if(window.Html5Qrcode){ ok(); return; }
+  var sc = document.createElement('script');
+  sc.src = 'https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js';
+  sc.onload = ok; sc.onerror = falla;
+  document.getElementsByTagName('head')[0].appendChild(sc);
+}
+function camCierra(){
+  document.getElementById('cam').className = 'cam';
+  if(!CAM) return;
+  var c = CAM; CAM = null;
+  try { c.stop().then(function(){ try { c.clear(); } catch(e){} }, function(){}); } catch(e){}
+}
+function camLeyo(txt){
+  if(!CAM) return;
+  camCierra();
+  try { if(navigator.vibrate) navigator.vibrate(120); } catch(e){}
+  qEl.value = txt;
+  onQ();
+  try { qEl.select(); } catch(e){}
+  window.scrollTo(0, 0);
+}
+function camAbre(){
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    alert('Este telefono no deja usar la camara desde el navegador. Escribe el nombre del producto.');
+    return;
+  }
+  document.getElementById('cam').className = 'cam on';
+  camMsg('Prendiendo la c&aacute;mara&hellip;');
+  camLib(function(){
+    try {
+      var F = window.Html5QrcodeSupportedFormats;
+      CAM = new window.Html5Qrcode('camVista', {
+        formatsToSupport: [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODE_128, F.CODE_39, F.ITF],
+        experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+        verbose: false
+      });
+      CAM.start({ facingMode: 'environment' },
+        { fps: 12, qrbox: function(w, h){ return { width: Math.floor(w * 0.88), height: Math.floor(Math.min(w, h) * 0.42) }; } },
+        camLeyo, function(){})
+        .then(function(){ camMsg('Apunta al c&oacute;digo de barras'); },
+              function(){ CAM = null;
+                camMsg('No pude prender la c&aacute;mara.<br><small>Dale permiso a la c&aacute;mara para esta p&aacute;gina y vuelve a intentar.</small>'); });
+    } catch(e){
+      CAM = null;
+      camMsg('No pude prender la c&aacute;mara en este tel&eacute;fono.');
+    }
+  }, function(){
+    camMsg('No se pudo cargar el lector.<br><small>Revisa el internet y vuelve a intentar.</small>');
+  });
+}
+document.getElementById('bCam').onclick = camAbre;
+document.getElementById('camCerrar').onclick = camCierra;
 /* El escaner manda Enter al final: se deja el codigo seleccionado para que
    el siguiente escaneo lo reemplace en vez de pegarse atras. */
 qEl.onkeydown = function(ev){
