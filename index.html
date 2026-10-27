@@ -54,6 +54,9 @@ header{background:#1f2937;color:#fff;padding:10px 12px;position:sticky;top:0;z-i
 .tools{background:#fff;padding:9px 12px;border-bottom:1px solid #e3e6ea;position:sticky;top:0;z-index:40}
 #q{width:100%;padding:11px 12px;font-size:16px;border:1px solid #d5d9df;border-radius:8px;background:#f8f9fa}
 .qrow{display:flex;gap:7px}
+.vr{display:flex;gap:7px;margin-top:7px}
+.vr select,.vr input{flex:1;min-width:0;padding:10px 11px;font-size:15px;border:0;border-radius:8px;background:#fff;color:#111}
+.vr .falta{outline:2px solid #f59e0b}
 .qrow #q{flex:1;min-width:0;width:auto}
 #bCam{flex:none;width:50px;border:0;border-radius:8px;background:#1f2937;color:#fff;font-size:21px;line-height:1}
 .cam{display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:200;background:rgba(0,0,0,.92);
@@ -148,6 +151,11 @@ header{background:#1f2937;color:#fff;padding:10px 12px;position:sticky;top:0;z-i
     <button id="bhacer">Entrar</button>
   </div>
   <input class="tienda" id="tienda" placeholder="&iquest;Para cu&aacute;l tienda? (escribe el nombre)" autocomplete="off">
+  <div class="vr" id="vr">
+    <select id="ruta" aria-label="Ruta"><option value="">Ruta&hellip;</option></select>
+    <input id="vendedor" list="vendedores" placeholder="Vendedor (nombre o n&uacute;mero)" autocomplete="off">
+    <datalist id="vendedores"></datalist>
+  </div>
   <div class="sug"><div class="sugl" id="sugl" style="display:none"></div></div>
   <div class="dsd" id="dsd" style="display:none"></div>
 </header>
@@ -247,7 +255,8 @@ function pintaPend(){
 function subirUno(ped, hecho){
   post('gd_pedidos',
     {id:ped.id, tienda:ped.tienda, tienda_id:(ped.tienda_id || null), nota:ped.nota,
-     articulos:ped.articulos, total:ped.total, es_prueba:false},
+     articulos:ped.articulos, total:ped.total, es_prueba:false,
+     vendedor:(ped.vendedor || null), ruta:(ped.ruta || null)},
     function(){
       if(!ped.lineas || !ped.lineas.length){ hecho(true); return; }
       post('gd_pedido_lineas', ped.lineas, function(){ hecho(true); }, function(){ hecho(false); });
@@ -280,7 +289,8 @@ function guardarPedido(){
   }
   var nt = document.getElementById('nota').value;
   var ped = {id:pid, tienda:document.getElementById('tienda').value, tienda_id:TIENDA_ID,
-             nota:(nt ? nt : null), articulos:n, total:Math.round(tot*100)/100, lineas:lineas};
+             nota:(nt ? nt : null), articulos:n, total:Math.round(tot*100)/100, lineas:lineas,
+             vendedor:vrVal('vendedor'), ruta:vrVal('ruta')};
   var q = cola(); q.push(ped); ponCola(q);
   pintaPend(); vaciarCola();
 }
@@ -916,7 +926,7 @@ function camLeyo(txt){
 }
 function camAbre(){
   if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
-    alert('Este telefono no deja usar la camara desde el navegador. Escribe el nombre del producto.');
+    aviso('Este tel&eacute;fono no deja usar la c&aacute;mara desde el navegador. Escribe el nombre del producto.');
     return;
   }
   document.getElementById('cam').className = 'cam on';
@@ -944,6 +954,75 @@ function camAbre(){
   });
 }
 document.getElementById('bCam').onclick = camAbre;
+
+/* ---- Vendedor y ruta (Manuel y Helen, 26/oct/2026) ----
+   Como en QuickBooks: cada invoice lleva la ruta y el vendedor. Las rutas
+   son la lista de valores que ya se usan en los invoices de QuickBooks
+   (gd_qb_valores); el vendedor escoge la suya y pone su nombre una vez:
+   el telefono se acuerda. Si la lista todavia no esta, se escribe a mano. */
+function vrVal(id){
+  var el = document.getElementById(id);
+  return el ? el.value.replace(/^\s+|\s+$/g, '') : '';
+}
+function vrGuarda(){
+  try { localStorage.setItem('gd_ruta', vrVal('ruta')); localStorage.setItem('gd_vend', vrVal('vendedor')); } catch(e){}
+  vrMarca();
+}
+function vrMarca(){
+  document.getElementById('ruta').className = vrVal('ruta') ? '' : 'falta';
+  document.getElementById('vendedor').className = vrVal('vendedor') ? '' : 'falta';
+}
+function vrLista(){
+  var x = new XMLHttpRequest();
+  x.open('GET', SB_URL + '/gd_qb_valores?select=valor,rol,veces&rol=in.(ruta,vendedor)&order=veces.desc&limit=500', true);
+  x.setRequestHeader('apikey', SB_KEY);
+  x.setRequestHeader('Authorization', 'Bearer ' + SB_KEY);
+  x.onreadystatechange = function(){
+    if(x.readyState !== 4 || x.status < 200 || x.status >= 300) return;
+    var d = []; try { d = JSON.parse(x.responseText) || []; } catch(e){ return; }
+    var rutas = [], vends = '', i, ya = {};
+    for(i=0;i<d.length;i++){
+      var v = String(d[i].valor);
+      if(d[i].rol === 'ruta' && !ya['r' + v]){ ya['r' + v] = 1; rutas.push(v); }
+      if(d[i].rol === 'vendedor' && !ya['v' + v]){ ya['v' + v] = 1; vends += '<option value="' + v.replace(/"/g,'&quot;') + '">'; }
+    }
+    document.getElementById('vendedores').innerHTML = vends;
+    if(!rutas.length){
+      /* Todavia no se trae la lista de QuickBooks: la ruta se escribe a mano. */
+      var viejo = document.getElementById('ruta'), inp = document.createElement('input');
+      inp.id = 'ruta'; inp.placeholder = 'Ruta'; inp.setAttribute('autocomplete', 'off');
+      inp.value = viejo.value;
+      viejo.parentNode.replaceChild(inp, viejo);
+      inp.onchange = vrGuarda; inp.onkeyup = vrGuarda;
+      vrMarca();
+      return;
+    }
+    rutas.sort();
+    var sel = document.getElementById('ruta'), h = '<option value="">Ruta&hellip;</option>', guardada = '';
+    try { guardada = localStorage.getItem('gd_ruta') || ''; } catch(e){}
+    for(i=0;i<rutas.length;i++){
+      var r = rutas[i].replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+      h += '<option value="' + r + '"' + (rutas[i] === guardada ? ' selected' : '') + '>' + r + '</option>';
+    }
+    sel.innerHTML = h;
+    vrMarca();
+  };
+  try { x.send(null); } catch(e){}
+}
+(function(){
+  /* Con el link de una tienda (?t=) el que pide es el tendero: no le toca escoger ruta. */
+  if(param('t')){ document.getElementById('vr').style.display = 'none'; return; }
+  var r = '', v = '';
+  try { r = localStorage.getItem('gd_ruta') || ''; v = localStorage.getItem('gd_vend') || ''; } catch(e){}
+  var sel = document.getElementById('ruta');
+  if(r){ sel.innerHTML += '<option value="' + r.replace(/"/g,'&quot;') + '" selected>' + r.replace(/</g,'&lt;') + '</option>'; }
+  document.getElementById('vendedor').value = v;
+  sel.onchange = vrGuarda;
+  var ve = document.getElementById('vendedor');
+  ve.onchange = vrGuarda; ve.onkeyup = vrGuarda;
+  vrMarca();
+  vrLista();
+})();
 document.getElementById('camCerrar').onclick = camCierra;
 /* El escaner manda Enter al final: se deja el codigo seleccionado para que
    el siguiente escaneo lo reemplace en vez de pegarse atras. */

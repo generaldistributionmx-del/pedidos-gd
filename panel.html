@@ -865,6 +865,8 @@ function qbApiEstado(){
            'Fotos de QuickBooks: revisar sin cambiar nada</button>' +
            '<button class="mini" id="bQbClientes" style="margin-top:7px">' +
            'Tiendas (clientes) de QuickBooks: revisar sin cambiar nada</button>' +
+           '<button class="mini" id="bQbCampos" style="margin-top:7px">' +
+           'Rutas y vendedores de los invoices: revisar</button>' +
            '<button class="mini" id="bQbDesconectar" style="margin-top:7px;color:#b91c1c;' +
            'border-color:#f0c8c8">Desconectar de QuickBooks</button>';
     }
@@ -873,6 +875,7 @@ function qbApiEstado(){
     if($('bQbApiVer'))      $('bQbApiVer').onclick      = function(){ qbApiRefresca(false); };
     if($('bQbFotos'))       $('bQbFotos').onclick       = qbFotosRevisa;
     if($('bQbClientes'))    $('bQbClientes').onclick    = function(){ qbClientes(false); };
+    if($('bQbCampos'))      $('bQbCampos').onclick      = function(){ qbCampos(false); };
     if($('bQbDesconectar')) $('bQbDesconectar').onclick = qbApiDesconecta;
   });
 }
@@ -959,6 +962,41 @@ function qbClientes(deVerdad){
       qbClientes(true);
     };
     if(deVerdad) cargaTiendas();
+  });
+}
+
+/* ---- ruta y vendedor: los campos propios de los invoices de QuickBooks ----
+   Se leen los ultimos invoices y se ve como se llaman los campos y que valores
+   se usan. Al guardar, esa lista es la que escoge el vendedor en la app y lo
+   que lleva el invoice que sale de Bodega. */
+function qbCampos(deVerdad){
+  var b = $('bQbCampos');
+  if(b) b.disabled = true;
+  QBAPIUSADA = true;
+  aviso('mQbApi', 'Leyendo los invoices de QuickBooks&hellip; tarda unos segundos.', true);
+  qbApiLlama({accion:'campos', de_verdad:deVerdad}, function(d){
+    if(b) b.disabled = false;
+    var r = d.resumen || {}, cs = r.campos || [], h = '<div class="top" style="margin-top:11px">', i, j;
+    h += '<div class="ln"><div class="a">Invoices le&iacute;dos</div><div class="b">' + (r.invoices_leidos || 0) + '</div></div>';
+    if(!cs.length) h += '<div class="ln"><div class="a">Esos invoices no traen campos propios (ruta, vendedor&hellip;).</div><div class="b"></div></div>';
+    for(i=0;i<cs.length;i++){
+      var c = cs[i], muestra = [];
+      for(j=0;j<Math.min(c.valores.length, 12);j++) muestra.push(bEsc(c.valores[j].valor));
+      h += '<div class="ln"><div class="a"><b>' + bEsc(c.campo) + '</b>' +
+           (c.rol ? ' <span class="bet ' + (c.rol === 'ruta' ? 'inv' : 'nuevo') + '">' + c.rol.toUpperCase() + '</span>'
+                  : ' <span style="color:#6b7280">(no lo uso)</span>') +
+           '<div style="color:#6b7280;font-size:13px">' + (muestra.join(', ') || 'sin valores') +
+           (c.valores.length > 12 ? '&hellip;' : '') + '</div></div>' +
+           '<div class="b">' + c.valores.length + ' valores</div></div>';
+    }
+    h += '</div>';
+    if(!deVerdad && cs.length){
+      h += '<button class="mini p" id="bQbCamposPon" style="margin-top:9px">Guardar la lista para la app</button>';
+    }
+    $('qbApiRes').innerHTML = h;
+    aviso('mQbApi', deVerdad ? 'Listo: ya est&aacute; la lista. Los vendedores la ven al abrir la app.'
+                             : 'Esto es lo que encontr&eacute; en tus invoices. <b>Todav&iacute;a no se guard&oacute; nada.</b>', true);
+    if($('bQbCamposPon')) $('bQbCamposPon').onclick = function(){ this.disabled = true; qbCampos(true); };
   });
 }
 
@@ -1645,7 +1683,7 @@ function pintaBodega(){
 function abreBodega(id){
   $('bodega').innerHTML = '<div class="cargando">Abriendo el pedido&hellip;</div>';
   bCatalogo(function(){
-    var u = SB + '/rest/v1/gd_pedidos?id=eq.' + id + '&select=id,folio,tienda,nota,total,articulos,creado,estado,es_prueba,' +
+    var u = SB + '/rest/v1/gd_pedidos?id=eq.' + id + '&select=id,folio,tienda,nota,total,articulos,creado,estado,es_prueba,vendedor,ruta,' +
             'picking_por,picking_fin,qb_invoice_id,qb_invoice_num,qb_invoice_total,' +
             'gd_pedido_lineas(id,producto_id,producto,precio,cantidad,importe,surtido,surtido_mano,quitado,agregado_bodega,cantidad_pedida)';
     req('GET', u, null, true,
@@ -1695,7 +1733,9 @@ function pintaPicking(msg, clase){
   var h = '<div class="bhead"><button class="bvolver" data-bvolver="1">&larr; Pedidos</button>';
   h += '<div style="min-width:0"><div style="font-weight:800;font-size:17px">' + bEsc(p.tienda) +
        (p.es_prueba ? '<span class="prueba">PRUEBA</span>' : '') + '</div>';
-  h += '<div style="color:#6b7280;font-size:13px">Folio ' + p.folio + ' &middot; ' + fecha(p.creado) + '</div></div></div>';
+  h += '<div style="color:#6b7280;font-size:13px">Folio ' + p.folio + ' &middot; ' + fecha(p.creado) +
+       (p.ruta ? ' &middot; Ruta <b>' + bEsc(p.ruta) + '</b>' : '') +
+       (p.vendedor ? ' &middot; Vendi&oacute; <b>' + bEsc(p.vendedor) + '</b>' : '') + '</div></div></div>';
 
   if(terminada){
     h += '<div class="bestado fin">&#10003; ORDEN TERMINADA' +
@@ -1940,8 +1980,13 @@ function bCajaInvoice(){
   var r = BINV.resumen || {};
   h += '<div class="top">' +
        '<div class="ln"><div class="a">Cliente en QuickBooks</div><div class="b">' + bEsc(r.cliente_qb || 'NO ENCONTRADO') + '</div></div>' +
+       '<div class="ln"><div class="a">Ruta</div><div class="b">' + bEsc(r.ruta || 'sin ruta') + '</div></div>' +
+       '<div class="ln"><div class="a">Vendedor</div><div class="b">' + bEsc(r.vendedor || 'sin vendedor') + '</div></div>' +
        '<div class="ln"><div class="a">Productos</div><div class="b">' + (r.productos || 0) + ' (' + (r.piezas || 0) + ' piezas)</div></div>' +
        '<div class="ln"><div class="a"><b>Total</b></div><div class="b"><b>' + money(r.total || 0) + '</b></div></div></div>';
+  if((r.ruta || r.vendedor) && r.campos_en_invoice && !r.campos_en_invoice.length && !(r.problemas && r.problemas.length))
+    h += '<div class="bmsg info" style="display:block">La ruta y el vendedor <b>no</b> van a ir en el invoice: falta traer la lista ' +
+         'desde Productos &rarr; QuickBooks &rarr; <i>Rutas y vendedores de los invoices</i>.</div>';
   if(r.problemas && r.problemas.length){
     h += '<div class="bmsg mal" style="font-size:15px">' + r.problemas.map(bEsc).join('<br>') + '</div>' +
          '<button class="bmano" data-binv="revisa">Revisar otra vez</button>';
@@ -1980,7 +2025,7 @@ function bRuta(){
    Manuel, 26/oct/2026: cuantos pedidos surtio cada quien y cuanto se tardo,
    para llevar el control de las horas de trabajo. El tiempo cuenta desde la
    primera pieza escaneada hasta que se aprieta "Terminar orden". */
-var RDIAS = 7, RPRUEBA = false, RDATOS = [], RVIVOS = [], RQUIEN = '';
+var RDIAS = 7, RPRUEBA = false, RDATOS = [], RVIVOS = [], RQUIEN = '', RTIPO = 'picking', RINV = [], RSIN = [];
 
 function rDur(ms){
   if(!(ms > 0)) return '0 min';
@@ -1995,8 +2040,13 @@ function rHora(iso){
 }
 function rLlave(n){ return String(n || 'Sin nombre').replace(/^\s+|\s+$/g, '').toLowerCase(); }
 
+function rDesde(){
+  var d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate() - (RDIAS - 1));
+  return d.toISOString();
+}
 function cargaReportes(){
   $('reportes').innerHTML = '<div class="cargando">Cargando&hellip;</div>';
+  if(RTIPO === 'invoices'){ cargaRepInvoices(); return; }
   var u = SB + '/rest/v1/gd_pedidos?select=id,folio,tienda,articulos,total,es_prueba,picking_por,picking_inicio,picking_fin' +
           '&picking_fin=not.is.null&order=picking_fin.desc&limit=3000';
   if(RDIAS){
@@ -2018,11 +2068,103 @@ function cargaReportes(){
     });
 }
 
-function pintaReportes(){
+function rChips(){
   var ops = [[1,'Hoy'],[7,'7 d&iacute;as'],[30,'30 d&iacute;as'],[0,'Todo']], h = '<div class="chips">', i;
+  h += '<button class="chip' + (RTIPO === 'picking' ? ' on' : '') + '" data-rt="picking">Picking</button>' +
+       '<button class="chip' + (RTIPO === 'invoices' ? ' on' : '') + '" data-rt="invoices">Invoices</button>' +
+       '<span style="display:inline-block;width:12px"></span>';
   for(i=0;i<ops.length;i++)
     h += '<button class="chip' + (RDIAS === ops[i][0] ? ' on' : '') + '" data-rd="' + ops[i][0] + '">' + ops[i][1] + '</button>';
   h += '<button class="chip' + (RPRUEBA ? ' on' : '') + '" data-rp="1">Incluir pruebas</button></div>';
+  return h;
+}
+
+/* Los invoices que salieron a QuickBooks desde Bodega, dia por dia, con su
+   numero. Y los pedidos terminados que todavia NO tienen invoice: que no se
+   quede ninguno sin cobrar. */
+function cargaRepInvoices(){
+  var u = SB + '/rest/v1/gd_pedidos?select=id,folio,tienda,total,es_prueba,picking_por,vendedor,ruta,' +
+          'qb_invoice_id,qb_invoice_num,qb_invoice_total,qb_invoice_el&qb_invoice_el=not.is.null' +
+          '&order=qb_invoice_el.desc&limit=3000';
+  if(RDIAS) u += '&qb_invoice_el=gte.' + encodeURIComponent(rDesde());
+  if(!RPRUEBA) u += '&es_prueba=eq.false';
+  req('GET', u, null, true,
+    function(d){
+      RINV = d || [];
+      var u2 = SB + '/rest/v1/gd_pedidos?select=id,folio,tienda,total,picking_por,picking_fin,es_prueba' +
+               '&estado=eq.preparado&qb_invoice_id=is.null&order=picking_fin.asc&limit=300';
+      if(!RPRUEBA) u2 += '&es_prueba=eq.false';
+      req('GET', u2, null, true,
+        function(s2){ RSIN = s2 || []; pintaRepInvoices(); },
+        function(){ RSIN = []; pintaRepInvoices(); });
+    },
+    function(st){
+      if(st === 401){ refresca(cargaReportes, salir); return; }
+      $('reportes').innerHTML = '<div class="vacio">No se pudo cargar el reporte.</div>';
+    });
+}
+
+function pintaRepInvoices(){
+  var h = rChips(), i, tot = 0, dias = {}, ordenD = [], gente = {}, ordenG = [];
+  for(i=0;i<RINV.length;i++){
+    var v = RINV[i], t = parseFloat(v.qb_invoice_total != null ? v.qb_invoice_total : v.total) || 0;
+    tot += t;
+    var dd = new Date(v.qb_invoice_el), k = dd.getFullYear() + '-' + (dd.getMonth()+1) + '-' + dd.getDate();
+    if(!dias[k]){ dias[k] = {f: dd, n: 0, t: 0, lista: []}; ordenD.push(k); }
+    dias[k].n++; dias[k].t += t; dias[k].lista.push(v);
+    var quien = rLlave(v.picking_por);
+    if(!gente[quien]){ gente[quien] = {n: v.picking_por || 'Sin nombre', inv: 0, t: 0}; ordenG.push(quien); }
+    gente[quien].inv++; gente[quien].t += t;
+  }
+  h += '<div class="tiles"><div class="tile"><b>' + RINV.length + '</b><span>invoices a QuickBooks</span></div>' +
+       '<div class="tile money"><b>' + money(tot) + '</b><span>facturado</span></div>' +
+       '<div class="tile"><b' + (RSIN.length ? ' style="color:#b91c1c"' : '') + '>' + RSIN.length + '</b><span>terminados sin invoice</span></div></div>';
+
+  if(RSIN.length){
+    h += '<h2>Terminados que todav&iacute;a no tienen invoice</h2><div class="top">';
+    for(i=0;i<RSIN.length;i++){
+      var s2 = RSIN[i];
+      h += '<div class="ln" data-bab="' + s2.id + '" style="cursor:pointer"><div class="a"><b>' + bEsc(s2.tienda) + '</b>' +
+           (s2.es_prueba ? '<span class="prueba">PRUEBA</span>' : '') +
+           '<div style="color:#6b7280;font-size:13px">Folio ' + s2.folio +
+           (s2.picking_fin ? ' &middot; termin&oacute; ' + fecha(s2.picking_fin) : '') +
+           (s2.picking_por ? ' &middot; ' + bEsc(s2.picking_por) : '') + '</div></div>' +
+           '<div class="b">' + money(s2.total) + '</div></div>';
+    }
+    h += '</div><p class="ayuda" style="padding:0 3px">T&oacute;calo para abrirlo en Bodega y sacar su invoice.</p>';
+  }
+
+  if(ordenG.length){
+    ordenG.sort(function(a, b){ return gente[b].inv - gente[a].inv; });
+    h += '<h2>Por persona (qui&eacute;n surti&oacute;)</h2><div class="rtab"><table><thead><tr><th>Qui&eacute;n</th>' +
+         '<th>Invoices</th><th>Total</th></tr></thead><tbody>';
+    for(i=0;i<ordenG.length;i++){
+      var g = gente[ordenG[i]];
+      h += '<tr><td><b>' + bEsc(g.n) + '</b></td><td>' + g.inv + '</td><td>' + money(g.t) + '</td></tr>';
+    }
+    h += '</tbody></table></div>';
+  }
+
+  if(!RINV.length) h += '<div class="vacio" style="padding:22px">No sali&oacute; ning&uacute;n invoice a QuickBooks en este periodo.</div>';
+  for(i=0;i<ordenD.length;i++){
+    var dia = dias[ordenD[i]], j;
+    h += '<h2>' + dia.f.getDate() + '/' + (dia.f.getMonth()+1) + '/' + dia.f.getFullYear() + ' &middot; ' +
+         dia.n + (dia.n === 1 ? ' invoice' : ' invoices') + ' &middot; ' + money(dia.t) + '</h2><div class="rtab"><table>' +
+         '<thead><tr><th>Invoice</th><th>Tienda</th><th>Total</th><th>Hora</th><th>Surti&oacute;</th><th>Vendedor</th><th>Ruta</th></tr></thead><tbody>';
+    for(j=0;j<dia.lista.length;j++){
+      var x = dia.lista[j];
+      h += '<tr><td><b>#' + bEsc(x.qb_invoice_num || x.qb_invoice_id) + '</b></td><td style="text-align:left">' + bEsc(x.tienda) +
+           (x.es_prueba ? '<span class="prueba">PRUEBA</span>' : '') + '</td><td>' +
+           money(x.qb_invoice_total != null ? x.qb_invoice_total : x.total) + '</td><td>' + rHora(x.qb_invoice_el) + '</td><td>' +
+           bEsc(x.picking_por || '') + '</td><td>' + bEsc(x.vendedor || '') + '</td><td>' + bEsc(x.ruta || '') + '</td></tr>';
+    }
+    h += '</tbody></table></div>';
+  }
+  $('reportes').innerHTML = h;
+}
+
+function pintaReportes(){
+  var h = rChips(), i;
 
   /* por persona */
   var gente = {}, orden = [], tPz = 0, tMs = 0;
@@ -2189,11 +2331,22 @@ document.addEventListener('click', function(e){
       }
       var rd = el.getAttribute('data-rd');
       if(rd !== null && rd !== undefined && el.className.indexOf('chip') >= 0){ RDIAS = parseInt(rd, 10); cargaReportes(); return; }
+      var rt = el.getAttribute('data-rt');
+      if(rt && el.className.indexOf('chip') >= 0){ RTIPO = rt; cargaReportes(); return; }
       if(el.getAttribute('data-rp') && el.className.indexOf('chip') >= 0){ RPRUEBA = !RPRUEBA; cargaReportes(); return; }
       var rq = el.getAttribute('data-rq');
       if(rq !== null && rq !== undefined){ RQUIEN = (RQUIEN === rq) ? '' : rq; pintaReportes(); return; }
       var bab = el.getAttribute('data-bab');
-      if(bab){ abreBodega(bab); return; }
+      if(bab){
+        if($('sec-bodega').className.indexOf(' on') < 0){
+          var tb = document.querySelector('[data-sec=bodega]');
+          var ts2 = document.getElementsByClassName('tab'), ss2 = document.getElementsByClassName('panel-sec'), z;
+          for(z=0;z<ts2.length;z++) ts2[z].className = 'tab';
+          for(z=0;z<ss2.length;z++) ss2[z].className = 'panel-sec';
+          tb.className = 'tab on'; $('sec-bodega').className = 'panel-sec on';
+        }
+        abreBodega(bab); return;
+      }
       if(el.getAttribute('data-bvolver')){ cargaBodega(); return; }
       if(el.disabled && el.className.indexOf('bmano') >= 0) return;
       var bmn = el.getAttribute('data-bmano');

@@ -494,6 +494,53 @@ async function ponFoto(token: string, realm: string, x: { prod: Record<string, a
   });
 }
 
+// ---------- ruta y vendedor: los campos propios de los invoices ----------
+// En QuickBooks cada invoice ya lleva la ruta y el vendedor en campos propios
+// (CustomField). Aqui se leen los ultimos invoices para saber como se llaman
+// esos campos y que valores se usan: esa es la lista que escoge el vendedor.
+function rolDeCampo(nombre: string) {
+  const n = norm(nombre);
+  if (/\bruta\b|route/.test(n)) return "ruta";
+  if (/vend|rep|sales|seller/.test(n)) return "vendedor";
+  return null;
+}
+
+async function planCampos(token: string, realm: string) {
+  const campos = new Map<string, { campo_id: string; campo: string; rol: string | null; valores: Map<string, number> }>();
+  let leidos = 0, desde = 1;
+  for (let vueltas = 0; vueltas < 3; vueltas++) {
+    const q = `select * from Invoice orderby MetaData.CreateTime desc startposition ${desde} maxresults 1000`;
+    const r = await fetch(
+      `${API_BASE}/v3/company/${realm}/query?query=${encodeURIComponent(q)}&minorversion=75`,
+      { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } },
+    );
+    const t = await r.text();
+    if (!r.ok) throw new Error(`QuickBooks respondio ${r.status} al pedir los invoices: ${t.slice(0, 300)}`);
+    const tanda = JSON.parse(t)?.QueryResponse?.Invoice ?? [];
+    for (const inv of tanda) {
+      for (const cf of inv.CustomField ?? []) {
+        const id = String(cf.DefinitionId ?? "");
+        const nombre = limpia(cf.Name);
+        const valor = limpia(cf.StringValue);
+        if (!id || !nombre) continue;
+        if (!campos.has(id)) campos.set(id, { campo_id: id, campo: nombre, rol: rolDeCampo(nombre), valores: new Map() });
+        if (valor) {
+          const v = campos.get(id)!.valores;
+          v.set(valor, (v.get(valor) ?? 0) + 1);
+        }
+      }
+    }
+    leidos += tanda.length;
+    if (tanda.length < 1000) break;
+    desde += 1000;
+  }
+  const lista = [...campos.values()].map((c) => ({
+    campo_id: c.campo_id, campo: c.campo, rol: c.rol,
+    valores: [...c.valores.entries()].sort((a, b) => b[1] - a[1]).map(([valor, veces]) => ({ valor, veces })),
+  }));
+  return { invoices_leidos: leidos, campos: lista };
+}
+
 // ---------- el invoice de un pedido surtido en bodega ----------
 // Manuel y Helen, 26 de octubre de 2026: al terminar el picking se crea el
 // invoice en QuickBooks con lo que de verdad se surtio. Es la UNICA escritura
@@ -502,7 +549,7 @@ async function ponFoto(token: string, realm: string, x: { prod: Record<string, a
 async function planInvoice(token: string, realm: string, pedidoId: string) {
   const ped = (await base(
     `gd_pedidos?id=eq.${encodeURIComponent(pedidoId)}&select=id,folio,tienda,tienda_id,estado,es_prueba,` +
-    `picking_por,qb_invoice_id,qb_invoice_num,gd_pedido_lineas(id,producto_id,producto,precio,cantidad,surtido,quitado)`,
+    `picking_por,vendedor,ruta,qb_invoice_id,qb_invoice_num,gd_pedido_lineas(id,producto_id,producto,precio,cantidad,surtido,quitado)`,
   ))?.[0];
   if (!ped) throw new Error("No encontre ese pedido.");
 
@@ -541,6 +588,15 @@ async function planInvoice(token: string, realm: string, pedidoId: string) {
       };
     });
   const total = Math.round(lineas.reduce((s: number, l: any) => s + l.importe, 0) * 100) / 100;
+
+  // Ruta y vendedor van en los campos propios del invoice, como ya los usa Manuel.
+  const defs = await base("gd_qb_valores?select=campo_id,campo,rol&rol=in.(ruta,vendedor)&limit=1000") ?? [];
+  const campoDe = (rol: string) => defs.find((x: Record<string, any>) => x.rol === rol);
+  const extras: Record<string, unknown>[] = [];
+  for (const [rol, valor] of [["ruta", ped.ruta], ["vendedor", ped.vendedor]] as [string, string | null][]) {
+    const c = campoDe(rol);
+    if (c && valor) extras.push({ DefinitionId: String(c.campo_id), Name: c.campo, Type: "StringType", StringValue: String(valor).slice(0, 31) });
+  }
   const sinItem = lineas.filter((l: any) => !l.item_id).map((l: any) => l.producto);
   const sinSurtir = lineas.filter((l: any) => l.surtido < l.cantidad).map((l: any) => l.producto);
 
@@ -564,9 +620,13 @@ async function planInvoice(token: string, realm: string, pedidoId: string) {
       piezas: lineas.reduce((s: number, l: any) => s + l.cantidad, 0),
       total,
       es_prueba: !!ped.es_prueba,
+      ruta: ped.ruta ?? null,
+      vendedor: ped.vendedor ?? null,
+      campos_en_invoice: extras.map((x) => `${x.Name}: ${x.StringValue}`),
       problemas,
     },
     clienteId: cliente ? String(cliente.Id) : null,
+    extras,
   };
 }
 
@@ -575,6 +635,7 @@ async function creaInvoice(token: string, realm: string, plan: Awaited<ReturnTyp
   const cuerpo = {
     CustomerRef: { value: plan.clienteId },
     TxnDate: hoy,
+    ...(plan.extras.length ? { CustomField: plan.extras } : {}),
     PrivateNote: `App General Distribution · folio ${plan.ped.folio}` +
                  (plan.ped.picking_por ? ` · surtio ${plan.ped.picking_por}` : ""),
     Line: plan.lineas.map((l: any) => ({
@@ -900,6 +961,31 @@ Deno.serve(async (req) => {
         });
       }
       return json({ ok: true, de_verdad: true, resumen: plan.resumen });
+    }
+
+    // --- ruta y vendedor de los invoices: primero ver, luego guardar la lista ---
+    if (accion === "campos") {
+      if (faltanSecretos()) {
+        return json({ ok: false, error: "Faltan los secretos QB_CLIENT_ID y QB_CLIENT_SECRET en Supabase." }, 400);
+      }
+      const acceso = await accesoFresco();
+      const plan = await planCampos(acceso.token, acceso.realm);
+      if (cuerpo.de_verdad !== true) return json({ ok: true, de_verdad: false, resumen: plan });
+      const filas: Record<string, unknown>[] = [];
+      const ahora = new Date().toISOString();
+      for (const c of plan.campos) {
+        for (const v of c.valores) {
+          filas.push({ campo_id: c.campo_id, campo: c.campo, rol: c.rol, valor: v.valor, veces: v.veces, actualizado: ahora });
+        }
+      }
+      for (let i = 0; i < filas.length; i += 500) {
+        await base("gd_qb_valores", {
+          method: "POST",
+          headers: { Prefer: "resolution=merge-duplicates" },
+          body: JSON.stringify(filas.slice(i, i + 500)),
+        });
+      }
+      return json({ ok: true, de_verdad: true, resumen: plan, guardados: filas.length });
     }
 
     // --- el invoice de un pedido de bodega: primero el ensayo, luego de verdad ---

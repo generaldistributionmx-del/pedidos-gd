@@ -1167,3 +1167,31 @@ grant execute on function public.gd_bodega_equipo()                       to aut
 grant execute on function public.gd_bodega_cantidad(uuid, integer)        to authenticated;
 grant execute on function public.gd_bodega_quita(uuid, boolean)           to authenticated;
 grant execute on function public.gd_bodega_agrega(uuid, uuid, integer)    to authenticated;
+
+-- --------------------------------------------------------------------------
+--  Vendedor y ruta en el pedido, con la lista de valores de QuickBooks
+--  (Manuel y Helen, 26 de octubre de 2026)
+-- --------------------------------------------------------------------------
+-- En QuickBooks cada invoice lleva la ruta y el vendedor (campos propios del
+-- invoice). La app los pide al levantar el pedido y el invoice los lleva.
+alter table public.gd_pedidos
+  add column if not exists vendedor text,
+  add column if not exists ruta     text;
+
+-- Los valores que ya se usan en los invoices de QuickBooks, para escoger de
+-- una lista y no escribirlos a mano. Los llena gd-quickbooks (accion "campos").
+-- rol: 'ruta' o 'vendedor' cuando se sabe para que es ese campo.
+create table if not exists public.gd_qb_valores (
+  campo_id    text not null,           -- DefinitionId del campo en QuickBooks
+  campo       text not null,           -- como se llama en QuickBooks
+  rol         text,
+  valor       text not null,
+  veces       integer not null default 0,
+  actualizado timestamptz not null default now(),
+  primary key (campo_id, valor)
+);
+alter table public.gd_qb_valores enable row level security;
+-- La app los necesita sin sesion (el vendedor escoge su ruta): solo lectura.
+drop policy if exists gd_qb_valores_lee on public.gd_qb_valores;
+create policy gd_qb_valores_lee on public.gd_qb_valores for select to anon, authenticated using (true);
+grant select on public.gd_qb_valores to anon, authenticated;
