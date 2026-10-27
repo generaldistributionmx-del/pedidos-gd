@@ -1463,7 +1463,7 @@ function desde(){
 
 function carga(){
   $('cuerpo').innerHTML = '<div class="cargando">Cargando&hellip;</div>';
-  var u = SB + '/rest/v1/gd_pedidos?select=id,folio,tienda,nota,articulos,total,creado,estado,origen,gd_pedido_lineas(producto,categoria,precio,cantidad,importe)'
+  var u = SB + '/rest/v1/gd_pedidos?select=id,folio,tienda,tienda_id,tienda_cliente,nota,articulos,total,creado,estado,origen,gd_pedido_lineas(producto,categoria,precio,cantidad,importe)'
         + '&gd_pedido_lineas.quitado=eq.false&es_prueba=eq.false&order=creado.desc&limit=300';
   var d = desde();
   if(d) u += '&creado=gte.' + encodeURIComponent(d);
@@ -1543,6 +1543,10 @@ function pinta(){
     h += '<div class="art">' + p.articulos + (p.articulos===1?' art&iacute;culo':' art&iacute;culos') + '</div></div>';
     h += '</div><div class="lineas" id="l' + i + '">';
     if(p.nota) h += '<div class="nota"><b>Nota:</b> ' + p.nota + '</div>';
+    if(p.tienda_cliente) h += '<div class="nota">El cliente escribi&oacute;: <b>' + bEsc(p.tienda_cliente) + '</b></div>';
+    if(p.origen === 'cliente' && !p.tienda_id)
+      h += '<div class="nota" style="background:#fef3c7">Falta asignar el cliente real. ' +
+           '<button class="pas" data-bab="' + p.id + '">ASIGNAR CLIENTE</button></div>';
     var ls2 = p.gd_pedido_lineas || [];
     for(j=0;j<ls2.length;j++){
       h += '<div class="ln"><div class="a"><span class="cant">' + ls2[j].cantidad + '&times;</span> ' + ls2[j].producto + '</div>';
@@ -1645,7 +1649,7 @@ function bFoto(id, nombre){
 function cargaBodega(){
   BPED = null; BINV = null;
   $('bodega').innerHTML = '<div class="cargando">Cargando&hellip;</div>';
-  var sel = 'select=id,folio,tienda,articulos,total,creado,estado,es_prueba,origen,picking_por,qb_invoice_id,qb_invoice_num,' +
+  var sel = 'select=id,folio,tienda,tienda_id,articulos,total,creado,estado,es_prueba,origen,picking_por,qb_invoice_id,qb_invoice_num,' +
             'gd_pedido_lineas(cantidad,surtido,quitado)';
   var hace = new Date(); hace.setDate(hace.getDate() - 7);
   req('GET', SB + '/rest/v1/gd_pedidos?' + sel + '&estado=in.(nuevo,preparando)&order=creado.asc&limit=200', null, true,
@@ -1676,7 +1680,8 @@ function bTarjeta(p){
             '<span class="bet nuevo">NUEVA</span>';
   var h = '<div class="bped" data-bab="' + p.id + '"><div style="min-width:0">';
   h += '<div class="t">' + bEsc(p.tienda) + (p.es_prueba ? '<span class="prueba">PRUEBA</span>' : '') +
-       (p.origen === 'cliente' ? '<span class="cliente">CLIENTE</span>' : '') + '</div>';
+       (p.origen === 'cliente' ? '<span class="cliente">CLIENTE</span>' : '') +
+       (p.origen === 'cliente' && !p.tienda_id ? '<span class="prueba">FALTA CLIENTE</span>' : '') + '</div>';
   h += '<div class="m">' + tag + ' Folio ' + p.folio + ' &middot; ' + fecha(p.creado) +
        (p.picking_por ? ' &middot; <b>' + bEsc(p.picking_por) + '</b>' : '') + '</div>';
   if(p.estado !== 'preparado') h += '<div class="bbar"><i style="width:' + pct + '%"></i></div>';
@@ -1702,13 +1707,13 @@ function pintaBodega(){
 function abreBodega(id){
   $('bodega').innerHTML = '<div class="cargando">Abriendo el pedido&hellip;</div>';
   bCatalogo(function(){
-    var u = SB + '/rest/v1/gd_pedidos?id=eq.' + id + '&select=id,folio,tienda,nota,total,articulos,creado,estado,es_prueba,vendedor,ruta,origen,' +
+    var u = SB + '/rest/v1/gd_pedidos?id=eq.' + id + '&select=id,folio,tienda,tienda_id,tienda_cliente,nota,total,articulos,creado,estado,es_prueba,vendedor,ruta,origen,' +
             'picking_por,picking_fin,qb_invoice_id,qb_invoice_num,qb_invoice_total,' +
             'gd_pedido_lineas(id,producto_id,producto,precio,cantidad,importe,surtido,surtido_mano,quitado,agregado_bodega,cantidad_pedida)';
     req('GET', u, null, true,
       function(d){
         if(!d || !d.length){ cargaBodega(); return; }
-        BPED = d[0]; BRESET = false; BQUITA = ''; BINV = null;
+        BPED = d[0]; BRESET = false; BTIENDA = false; BQUITA = ''; BINV = null;
         BPED.gd_pedido_lineas.sort(function(a, b){ return a.producto < b.producto ? -1 : 1; });
         pintaPicking('', '');
       },
@@ -1770,6 +1775,7 @@ function pintaPicking(msg, clase){
        '<div><span>Ya surtido</span><b>' + money(cu.surtido) + '</b></div></div>';
 
   if(p.nota) h += '<div class="card" style="padding:10px 12px"><b>Nota:</b> ' + bEsc(p.nota) + '</div>';
+  h += bCajaTienda();
 
   if(!terminada){
     h += '<input id="bNom" placeholder="Tu nombre (quien surte)" autocomplete="off" value="' + bEsc(nom) + '" ' +
@@ -1848,6 +1854,11 @@ function pintaPicking(msg, clase){
     bb.onkeydown = function(ev){ if(ev.keyCode === 13 && ev.preventDefault) ev.preventDefault(); };
     $('bCam').onclick = camAbre;
     if(nom) $('bScan').focus(); else $('bNom').focus();
+  }
+  if($('bTq')){
+    $('bTq').oninput = bBuscaTienda;
+    $('bTq').onkeydown = function(ev){ if(ev.keyCode === 13 && ev.preventDefault) ev.preventDefault(); };
+    if(BTIENDA) $('bTq').focus();
   }
   /* Con la camara abierta, lo que dice la orden se ve tambien encima de la camara. */
   if(CAM && $('camMsg') && msg){ $('camMsg').className = clase || ''; $('camMsg').innerHTML = msg; }
@@ -1976,6 +1987,68 @@ function bReinicia(){
   bRpc('gd_bodega_reinicia', {p_pedido: BPED.id},
     function(){ abreBodega(BPED.id); },
     function(){ bAviso('No se pudo reiniciar.', 'mal'); });
+}
+
+/* ---- La tienda real (Manuel y Helen, 27/oct/2026) ----
+   El cliente de la liga pedir.html escribe su tienda como quiere. Para el
+   invoice hay que amarrarlo a la tienda real (la de QuickBooks): aqui se
+   busca y se escoge. Lo que escribio el cliente se guarda en tienda_cliente.
+   Se puede cambiar mientras no haya invoice. */
+var BTIENDA = false, BTSEQ = 0;
+function bCajaTienda(){
+  var p = BPED;
+  if(p.qb_invoice_id) return '';
+  var falta = p.origen === 'cliente' && !p.tienda_id;
+  if(!falta && !BTIENDA){
+    return '<div style="text-align:right;margin:-2px 0 6px"><button class="breset" data-btienda="abre">' +
+           'ASIGNAR OTRO CLIENTE</button></div>';
+  }
+  var h = '<div class="card" style="padding:10px 12px;' + (falta ? 'background:#fef3c7;border-color:#f59e0b' : '') + '">';
+  h += '<b>' + (falta ? 'ASIGNAR CLIENTE' : 'Asignar otro cliente') + '</b>';
+  h += '<div class="ayuda" style="margin:3px 0 7px">' +
+       (p.tienda_cliente || falta ? 'El cliente escribi&oacute;: <b>' + bEsc(p.tienda_cliente || p.tienda) + '</b>. ' : '') +
+       'Busca el cliente como est&aacute; en QuickBooks; con ese nombre sale el invoice.</div>';
+  h += '<input id="bTq" placeholder="Nombre del cliente o tienda" autocomplete="off" ' +
+       'style="width:100%;padding:11px;font-size:16px;border:1px solid #d5d9df;border-radius:8px">';
+  h += '<div id="bTres"></div>';
+  if(!falta) h += '<div style="text-align:center"><button class="breset" data-btienda="cierra">Cancelar</button></div>';
+  return h + '</div>';
+}
+function bBuscaTienda(){
+  var v = $('bTq').value.replace(/^\s+|\s+$/g, ''), mio = ++BTSEQ;
+  if(v.length < 2){ $('bTres').innerHTML = ''; return; }
+  var e = encodeURIComponent('%' + v + '%');
+  req('GET', SB + '/rest/v1/gd_tiendas?select=id,nombre,ciudad,ruta&activo=is.true&or=(nombre.ilike.' + e +
+      ',ciudad.ilike.' + e + ')&order=nombre.asc&limit=10', null, true,
+    function(d){
+      if(mio !== BTSEQ || !$('bTres')) return;   /* ya escribieron otra cosa */
+      var h = '', i;
+      for(i=0;i<(d || []).length;i++){
+        h += '<div class="bln" style="margin:7px 0 0"><div class="nm"><b>' + bEsc(d[i].nombre) + '</b>' +
+             '<small>' + bEsc([d[i].ciudad, d[i].ruta].filter(function(x){ return x; }).join(' &middot; ')) + '</small></div>' +
+             '<button class="bmano" data-btienda="' + d[i].id + '" data-btnom="' + bEsc(d[i].nombre) + '">Es esta</button></div>';
+      }
+      $('bTres').innerHTML = h || '<div class="ayuda" style="margin-top:7px">No encontr&eacute; ninguna tienda con eso.</div>';
+    },
+    function(st){
+      if(st === 401){ refresca(bBuscaTienda, salir); return; }
+      $('bTres').innerHTML = '<div class="ayuda" style="margin-top:7px">No se pudo buscar.</div>';
+    });
+}
+function bPonTienda(id, nombre){
+  var p = BPED, cambio = {tienda: nombre, tienda_id: id};
+  if(!p.tienda_cliente && !p.tienda_id) cambio.tienda_cliente = p.tienda;
+  req('PATCH', SB + '/rest/v1/gd_pedidos?id=eq.' + p.id, cambio, true,
+    function(){
+      p.tienda = nombre; p.tienda_id = id;
+      if(cambio.tienda_cliente) p.tienda_cliente = cambio.tienda_cliente;
+      BTIENDA = false; BINV = null;
+      pintaPicking('&#10003; Listo: este pedido ya es de <b>' + bEsc(nombre) + '</b>.', 'ok');
+    },
+    function(st){
+      if(st === 401){ refresca(function(){ bPonTienda(id, nombre); }, salir); return; }
+      bAviso('No se pudo cambiar la tienda.', 'mal');
+    });
 }
 
 /* ---- el invoice en QuickBooks: primero se revisa, luego se crea ---- */
@@ -2367,7 +2440,12 @@ document.addEventListener('click', function(e){
         }
         abreBodega(bab); return;
       }
-      if(el.getAttribute('data-bvolver')){ cargaBodega(); return; }
+      if(el.getAttribute('data-bvolver')){ BTIENDA = false; cargaBodega(); return; }
+      var bti = el.getAttribute('data-btienda');
+      if(bti){
+        if(bti === 'abre' || bti === 'cierra'){ BTIENDA = bti === 'abre'; pintaPicking('', ''); return; }
+        bPonTienda(bti, el.getAttribute('data-btnom')); return;
+      }
       if(el.disabled && el.className.indexOf('bmano') >= 0) return;
       var bmn = el.getAttribute('data-bmano');
       if(bmn){ var lm = bLinea(bmn);

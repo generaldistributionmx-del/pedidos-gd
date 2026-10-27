@@ -1210,3 +1210,9 @@ on conflict (campo_id, valor) do nothing;
 -- La liga para clientes lejanos (pedir.html), Manuel 27/oct/2026.
 alter table public.gd_pedidos add column if not exists origen text;
 comment on column public.gd_pedidos.origen is 'cliente = lo hizo el propio cliente con la liga pedir.html (sin vendedor). null = vendedor o tendero con su link.';
+
+-- ---------- Asignar cliente (Manuel y Helen, 27/oct/2026) ----------
+-- El cliente de la liga pedir.html escribe su tienda como quiere; en Bodega se
+-- le asigna la tienda real (tienda_id + tienda). Aqui queda lo que el escribio.
+alter table public.gd_pedidos add column if not exists tienda_cliente text;
+comment on column public.gd_pedidos.tienda_cliente is 'Lo que escribio el cliente como nombre de su tienda, antes de que en Bodega le asignaran la tienda real.';
