@@ -974,14 +974,17 @@ function vrMarca(){
 }
 function vrLista(){
   var x = new XMLHttpRequest();
-  x.open('GET', SB_URL + '/gd_qb_valores?select=valor,rol,veces&rol=in.(ruta,vendedor)&order=veces.desc&limit=500', true);
+  x.open('GET', SB_URL + '/gd_qb_valores?select=valor,rol,veces,campo_id&rol=in.(ruta,vendedor)&order=veces.desc&limit=500', true);
   x.setRequestHeader('apikey', SB_KEY);
   x.setRequestHeader('Authorization', 'Bearer ' + SB_KEY);
   x.onreadystatechange = function(){
     if(x.readyState !== 4 || x.status < 200 || x.status >= 300) return;
     var d = []; try { d = JSON.parse(x.responseText) || []; } catch(e){ return; }
-    var rutas = [], vends = '', i, ya = {};
+    var rutas = [], vends = '', i, ya = {}, manual = false;
+    /* Si Manuel dio sus rutas a mano, esas son las unicas que se escogen. */
+    for(i=0;i<d.length;i++) if(d[i].rol === 'ruta' && d[i].campo_id === 'manual') manual = true;
     for(i=0;i<d.length;i++){
+      if(manual && d[i].rol === 'ruta' && d[i].campo_id !== 'manual') continue;
       var v = String(d[i].valor);
       if(d[i].rol === 'ruta' && !ya['r' + v]){ ya['r' + v] = 1; rutas.push(v); }
       if(d[i].rol === 'vendedor' && !ya['v' + v]){ ya['v' + v] = 1; vends += '<option value="' + v.replace(/"/g,'&quot;') + '">'; }

@@ -600,7 +600,10 @@ async function planInvoice(token: string, realm: string, pedidoId: string) {
   const extras: Record<string, unknown>[] = [];
   for (const [rol, valor] of [["ruta", ped.ruta], ["vendedor", ped.vendedor]] as [string, string | null][]) {
     const c = campoDe(rol);
-    if (c && valor) extras.push({ DefinitionId: String(c.campo_id), Name: c.campo, Type: "StringType", StringValue: String(valor).slice(0, 31) });
+    // En QuickBooks la ruta se escribe sin la palabra (Colorado, Provo...): la
+    // app dice "Ruta Colorado" y aqui se le quita "Ruta " para que cuadre.
+    const texto = rol === "ruta" ? String(valor).replace(/^ruta\s+/i, "") : String(valor);
+    if (c && texto) extras.push({ DefinitionId: String(c.campo_id), Name: c.campo, Type: "StringType", StringValue: texto.slice(0, 31) });
   }
   const sinItem = lineas.filter((l: any) => !l.item_id).map((l: any) => l.producto);
   const sinSurtir = lineas.filter((l: any) => l.surtido < l.cantidad).map((l: any) => l.producto);
