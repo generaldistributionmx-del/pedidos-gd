@@ -1028,6 +1028,7 @@ if(MODO_CLIENTE){
   var suC = document.querySelector('.hd .sub'); if(suC) suC.innerHTML = 'Haz tu pedido';
   document.getElementById('nota').placeholder = 'Observaciones: lo que nos quieras decir de tu pedido (opcional)';
   document.getElementById('wa').innerHTML = 'Enviar mi pedido';
+  var deC = document.querySelector('.dest'); if(deC) deC.style.display = 'none';
   try { document.title = 'Haz tu pedido \u00b7 General Distribution'; } catch(e){}
   render();
 }
@@ -1083,7 +1084,16 @@ var nEl = document.getElementById('nota');
 nEl.onkeyup = save; nEl.oninput = save; nEl.onchange = save;
 document.getElementById('vp').onclick = function(){ lines(); document.getElementById('sheet').className = 'sheet on'; };
 document.getElementById('cx').onclick = function(){ document.getElementById('sheet').className = 'sheet'; };
+/* Manuel 27/oct/2026: un cliente toco "Enviar" varias veces y llegaron 6 pedidos
+   iguales. En la liga de clientes, ya enviado, no se vuelve a mandar hasta
+   "Empezar otro pedido". */
+var YA_ENVIADO = false;
 document.getElementById('wa').onclick = function(){
+  if(MODO_CLIENTE && YA_ENVIADO){
+    aviso('&#10003; <b>Tu pedido ya se envi&oacute;.</b> No hace falta mandarlo otra vez. ' +
+          'Para hacer uno nuevo toca <b>Empezar otro pedido</b>.');
+    return;
+  }
   var x = totals();
   if(x.n === 0){ aviso('El pedido est\u00e1 vac\u00edo. Toca <b>+</b> en lo que haga falta.'); return; }
   var t = document.getElementById('tienda').value;
@@ -1095,6 +1105,8 @@ document.getElementById('wa').onclick = function(){
   }
   guardarPedido();
   if(MODO_CLIENTE){
+    YA_ENVIADO = true;
+    document.getElementById('wa').innerHTML = '&#10003; Pedido enviado';
     aviso('&#10003; <b>&iexcl;Listo! Tu pedido ya lleg&oacute; a General Distribution.</b> ' +
           'Te contactamos para confirmarlo. Gracias.');
     document.getElementById('nuevo').style.display = 'block';
@@ -1105,6 +1117,7 @@ document.getElementById('wa').onclick = function(){
   window.open('https://wa.me/' + WHATSAPP + '?text=' + encodeURIComponent(texto()), '_blank');
 };
 document.getElementById('nuevo').onclick = function(){
+  if(MODO_CLIENTE){ YA_ENVIADO = false; document.getElementById('wa').innerHTML = 'Enviar mi pedido'; }
   cart = {}; save(); paintBar(); render();
   document.getElementById('nota').value = ''; save();
   /* Otro pedido, en una ruta, es OTRO CLIENTE. Se suelta la tienda para
