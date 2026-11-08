@@ -1854,10 +1854,21 @@ function pintaPicking(msg, clase){
            (BQUITA === l.id ? '&iquest;Seguro? Toca otra vez' : 'Quitar') + '</button>';
       h += '</div>';
     }
-    h += '</div><div class="cu">' + s + '/' + l.cantidad + '</div></div>';
+    if(p.origen === 'bodega' && !terminada && BEDITA === l.id){
+      h += '</div><div class="cu" style="min-width:0"><input id="bEdN" type="number" min="1" inputmode="numeric" value="' + l.cantidad + '" ' +
+           'style="width:74px;padding:8px;font-size:20px;font-weight:800;border:2px solid #16a34a;border-radius:8px">' +
+           '<button class="bmano" data-bedok="1" style="display:block;width:100%;margin-top:4px;background:#16a34a;color:#fff;border-color:#16a34a">OK</button></div></div>';
+    } else if(p.origen === 'bodega' && !terminada){
+      h += '</div><div class="cu" data-bedita="' + l.id + '" style="cursor:pointer;text-decoration:underline" ' +
+           'title="Toca para cambiar la cantidad">' + s + '/' + l.cantidad + '</div></div>';
+    } else {
+      h += '</div><div class="cu">' + s + '/' + l.cantidad + '</div></div>';
+    }
   }
   h += quitados;
 
+  var quieto = BQUIETO, yAntes = window.pageYOffset || 0;
+  BQUIETO = false;
   if(!terminada){
     h += '<div class="card" style="margin-top:10px"><b>Agregar un producto</b>' +
          '<input id="bBusca" placeholder="Escribe el nombre o escanea el c&oacute;digo" autocomplete="off" ' +
@@ -1899,7 +1910,17 @@ function pintaPicking(msg, clase){
         bPonCant();
       };
     }
-    if(CAM){ /* el foco lo lleva la camara */ }
+    if($('bEdN')){
+      $('bEdN').onkeydown = function(ev){
+        if(ev.keyCode !== 13) return;
+        if(ev.preventDefault) ev.preventDefault();
+        bEdGuarda();
+      };
+      try { $('bEdN').focus({preventScroll: true}); } catch(e){ $('bEdN').focus(); }
+      $('bEdN').select();
+    }
+    else if(quieto){ /* se queda donde estaba */ }
+    else if(CAM){ /* el foco lo lleva la camara */ }
     else if($('bQty')){ $('bQty').focus(); $('bQty').select(); }
     else if(nom) $('bScan').focus(); else $('bNom').focus();
   }
@@ -1908,6 +1929,7 @@ function pintaPicking(msg, clase){
     $('bTq').onkeydown = function(ev){ if(ev.keyCode === 13 && ev.preventDefault) ev.preventDefault(); };
     if(BTIENDA) $('bTq').focus();
   }
+  if(quieto || $('bEdN')) window.scrollTo(0, yAntes);
   /* Con la camara abierta, lo que dice la orden se ve tambien encima de la camara. */
   if(CAM && $('camMsg') && msg){ $('camMsg').className = clase || ''; $('camMsg').innerHTML = msg; }
   camPide();
@@ -1989,6 +2011,7 @@ function bCambia(l, campos){
 function bCantidad(id, d){
   var l = bLinea(id);
   if(!l) return;
+  BQUIETO = true;
   var n = l.cantidad + d;
   if(n < 1) return;
   bRpc('gd_bodega_cantidad', {p_linea: id, p_cantidad: n},
@@ -1999,6 +2022,7 @@ function bCantidad(id, d){
 function bQuita(id, quitar){
   var l = bLinea(id);
   if(!l) return;
+  BQUIETO = true;
   if(quitar && BQUITA !== id){ BQUITA = id; pintaPicking('', ''); return; }
   BQUITA = '';
   bRpc('gd_bodega_quita', {p_linea: id, p_quitar: quitar},
@@ -2041,14 +2065,22 @@ function bAgrega(prodId, escaneado){
    Sin vendedor ni pedido de antes: se escoge el cliente, se crea el pedido
    vacio (origen 'bodega') y se va llenando escaneando. Lo demas es igual:
    terminar, invoice en QuickBooks. */
-var BCREA = false, BPIDE = '', BCANC = false;
+var BCREA = false, BPIDE = '', BCANC = false, BEDITA = '', BQUIETO = false;
+/* Tocar el 10/10 de un renglon: se escribe la cantidad ahi mismo (Manuel, 8/nov). */
+function bEdAbre(id){ BEDITA = id; BPIDE = ''; BQUIETO = true; pintaPicking('', ''); }
+function bEdGuarda(){
+  var v = $('bEdN') ? $('bEdN').value : '';
+  BPIDE = BEDITA; BEDITA = ''; BQUIETO = true;
+  bPonCant(v);
+}
 /* Lo escaneado se pregunta cuantas (Manuel, 8/nov): el total que escribe queda pedido y surtido. */
 function bPonCant(valor){
   var l = bLinea(BPIDE), n = parseInt(valor != null ? valor : $('bQty').value, 10);
   if(!l) return;
   if(!(n >= 1)){ bAviso('Escribe 1 o m&aacute;s. Para quitarlo usa <b>Quitar</b>.', 'mal'); return; }
+  var quieto = BQUIETO;
   var surte = function(){
-    BPIDE = '';
+    BPIDE = ''; BQUIETO = quieto;
     if(l.surtido < l.cantidad){ bSuma(l, l.cantidad - l.surtido, false); return; }
     pintaPicking('&#10003; ' + bEsc(l.producto) + ' &mdash; ' + l.cantidad + '. Escanea el siguiente.', 'ok');
   };
@@ -2618,6 +2650,9 @@ document.addEventListener('click', function(e){
       if(el.getAttribute('data-bvolver')){ BTIENDA = false; cargaBodega(); return; }
       if(el.getAttribute('data-bnuevo')){ bNuevoPinta(); return; }
       if(el.getAttribute('data-bqty')){ bPonCant(); return; }
+      var bed = el.getAttribute('data-bedita');
+      if(bed){ bEdAbre(bed); return; }
+      if(el.getAttribute('data-bedok')){ bEdGuarda(); return; }
       if(el.getAttribute('data-bcanc')){ bCancela(); return; }
       var bti = el.getAttribute('data-btienda');
       if(bti && !BPED && bti !== 'abre' && bti !== 'cierra'){ bCreaPedido(bti, el.getAttribute('data-btnom')); return; }
