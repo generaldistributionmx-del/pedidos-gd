@@ -1681,7 +1681,8 @@ function bTarjeta(p){
   var h = '<div class="bped" data-bab="' + p.id + '"><div style="min-width:0">';
   h += '<div class="t">' + bEsc(p.tienda) + (p.es_prueba ? '<span class="prueba">PRUEBA</span>' : '') +
        (p.origen === 'cliente' ? '<span class="cliente">CLIENTE</span>' : '') +
-       (p.origen === 'cliente' && !p.tienda_id ? '<span class="prueba">FALTA CLIENTE</span>' : '') + '</div>';
+       (p.origen === 'cliente' && !p.tienda_id ? '<span class="prueba">FALTA CLIENTE</span>' : '') +
+       (p.origen === 'bodega' ? '<span class="cliente">HECHO EN BODEGA</span>' : '') + '</div>';
   h += '<div class="m">' + tag + ' Folio ' + p.folio + ' &middot; ' + fecha(p.creado) +
        (p.picking_por ? ' &middot; <b>' + bEsc(p.picking_por) + '</b>' : '') + '</div>';
   if(p.estado !== 'preparado') h += '<div class="bbar"><i style="width:' + pct + '%"></i></div>';
@@ -1691,7 +1692,10 @@ function bTarjeta(p){
 }
 
 function pintaBodega(){
-  var h = '<h2>Por surtir</h2>', i;
+  var h = '<button class="bfin" data-bnuevo="1" style="margin:4px 0 6px">+ HACER UN PEDIDO AQU&Iacute; EN BODEGA</button>' +
+          '<p class="ayuda" style="padding:0 3px;margin:0 0 6px">Sin vendedor: escoges el cliente y escaneas lo que se lleva.</p>';
+  var i;
+  h += '<h2>Por surtir</h2>';
   h += '<p class="ayuda" style="padding:0 3px;margin-top:-2px">Toca un pedido, escribe tu nombre ' +
        'y escanea <b>cada pieza</b> antes de empacarla. Si no es del pedido, no cuenta.</p>';
   if(!BPEDS.length) h += '<div class="vacio" style="padding:22px">No hay pedidos por surtir.<br>' +
@@ -1757,7 +1761,8 @@ function pintaPicking(msg, clase){
   var h = '<div class="bhead"><button class="bvolver" data-bvolver="1">&larr; Pedidos</button>';
   h += '<div style="min-width:0"><div style="font-weight:800;font-size:17px">' + bEsc(p.tienda) +
        (p.es_prueba ? '<span class="prueba">PRUEBA</span>' : '') +
-       (p.origen === 'cliente' ? '<span class="cliente">LO HIZO EL CLIENTE</span>' : '') + '</div>';
+       (p.origen === 'cliente' ? '<span class="cliente">LO HIZO EL CLIENTE</span>' : '') +
+       (p.origen === 'bodega' ? '<span class="cliente">HECHO EN BODEGA</span>' : '') + '</div>';
   h += '<div style="color:#6b7280;font-size:13px">Folio ' + p.folio + ' &middot; ' + fecha(p.creado) +
        (p.ruta ? ' &middot; Ruta <b>' + bEsc(p.ruta) + '</b>' : '') +
        (p.vendedor ? ' &middot; Vendi&oacute; <b>' + bEsc(p.vendedor) + '</b>' : '') + '</div></div></div>';
@@ -1780,6 +1785,11 @@ function pintaPicking(msg, clase){
   if(!terminada){
     h += '<input id="bNom" placeholder="Tu nombre (quien surte)" autocomplete="off" value="' + bEsc(nom) + '" ' +
          'style="width:100%;padding:12px;font-size:16px;border:1px solid #d5d9df;border-radius:8px">';
+    if(p.origen === 'bodega')
+      h += '<div class="ayuda" style="margin:8px 0 0">Producto nuevo que escanees entra con ' +
+           '<input id="bCant" type="number" min="1" value="' + bCantNueva() + '" ' +
+           'style="width:64px;padding:6px;font-size:16px;border:1px solid #d5d9df;border-radius:6px"> piezas ' +
+           '(cuenta 1; las dem&aacute;s con <b>Contar los que faltan</b>). Si lo escaneas otra vez, sube uno.</div>';
     h += '<div class="bsrow"><input id="bScan" class="bscan" placeholder="Escanea aqu&iacute;" autocomplete="off">' +
          '<button class="bcam" id="bCam" type="button" aria-label="Escanear con la c&aacute;mara">&#128247;</button></div>';
   }
@@ -1803,7 +1813,7 @@ function pintaPicking(msg, clase){
     h += cod ? 'c&oacute;digo ' + bEsc(pr.r) : '<span class="sc">sin c&oacute;digo de barras</span>';
     if(l.surtido_mano) h += ' &middot; ' + l.surtido_mano + ' a mano';
     if(l.agregado_bodega) h += ' &middot; <span class="sc">agregado en bodega</span>';
-    if(l.cantidad_pedida && l.cantidad_pedida !== l.cantidad) h += ' &middot; <span class="sc">ped&iacute;an ' + l.cantidad_pedida + '</span>';
+    if(p.origen !== 'bodega' && l.cantidad_pedida && l.cantidad_pedida !== l.cantidad) h += ' &middot; <span class="sc">ped&iacute;an ' + l.cantidad_pedida + '</span>';
     h += '</small>';
     if(!terminada){
       h += '<div class="bacc">';
@@ -1853,6 +1863,7 @@ function pintaPicking(msg, clase){
     bb.oninput = bBuscar; bb.onkeyup = bBuscar;
     bb.onkeydown = function(ev){ if(ev.keyCode === 13 && ev.preventDefault) ev.preventDefault(); };
     $('bCam').onclick = camAbre;
+    if($('bCant')) $('bCant').onchange = function(){ try { localStorage.setItem('gd_bcant', bCantNueva()); } catch(e){} };
     if(nom) $('bScan').focus(); else $('bNom').focus();
   }
   if($('bTq')){
@@ -1889,6 +1900,12 @@ function bEscanea(txt){
     if(!pr || !bIgual(pr.u, c)) continue;
     if(ls[i].surtido < ls[i].cantidad){ cual = ls[i]; break; }
     lleno = ls[i];
+  }
+  if(!cual && BPED.origen === 'bodega'){
+    if(lleno){ bSumaUno(lleno); return; }
+    var nuevo = '', k2;
+    for(k2 in BPROD){ if(BPROD.hasOwnProperty(k2) && BPROD[k2].a && bIgual(BPROD[k2].u, c)){ nuevo = k2; break; } }
+    if(nuevo){ bAgrega(nuevo, true); return; }
   }
   if(!cual){
     bSonido(false);
@@ -1964,13 +1981,64 @@ function bBuscar(){
   if(!out.length) h = '<div class="ayuda" style="margin-top:7px">No encontr&eacute; nada con eso.</div>';
   $('bRes').innerHTML = h;
 }
-function bAgrega(prodId){
-  bRpc('gd_bodega_agrega', {p_pedido: BPED.id, p_producto: prodId, p_cantidad: 1},
+function bAgrega(prodId, escaneado){
+  var n = BPED.origen === 'bodega' ? bCantNueva() : 1;
+  bRpc('gd_bodega_agrega', {p_pedido: BPED.id, p_producto: prodId, p_cantidad: n},
     function(r){
       BPED.gd_pedido_lineas.push(r);
-      pintaPicking('Agregado: ' + bEsc(r.producto) + ' (1). Ahora escan&eacute;alo.', 'ok');
+      if(escaneado){ bSuma(r, 1, false); return; }
+      pintaPicking('Agregado: ' + bEsc(r.producto) + ' (' + n + '). Ahora escan&eacute;alo.', 'ok');
     },
-    function(){ bAviso('No se pudo agregar.', 'mal'); });
+    function(){ bSonido(false); bAviso('No se pudo agregar.', 'mal'); });
+}
+
+/* ---- Pedido hecho en bodega (Manuel, 8/nov/2026) ----
+   Sin vendedor ni pedido de antes: se escoge el cliente, se crea el pedido
+   vacio (origen 'bodega') y se va llenando escaneando. Lo demas es igual:
+   terminar, invoice en QuickBooks. */
+var BCREA = false;
+function bCantNueva(){
+  var v = $('bCant') ? parseInt($('bCant').value, 10) : NaN;
+  if(isNaN(v)){ try { v = parseInt(localStorage.getItem('gd_bcant'), 10); } catch(e){} }
+  return v >= 1 ? v : 1;
+}
+function bSumaUno(l){
+  bRpc('gd_bodega_cantidad', {p_linea: l.id, p_cantidad: l.cantidad + 1},
+    function(r){
+      l.cantidad = r.cantidad; l.importe = r.importe; l.cantidad_pedida = r.cantidad_pedida;
+      bSuma(l, 1, false);
+    },
+    function(){ bSonido(false); bAviso('No se guard&oacute;. Revisa el internet y escanea otra vez.', 'mal'); });
+}
+function bNuevoPinta(){
+  BPED = null;
+  var h = '<div class="bhead"><button class="bvolver" data-bvolver="1">&larr; Pedidos</button>' +
+          '<div style="font-weight:800;font-size:17px">Pedido nuevo en bodega</div></div>';
+  h += '<div class="card" style="padding:10px 12px"><b>&iquest;Para qu&eacute; cliente?</b>' +
+       '<div class="ayuda" style="margin:3px 0 7px">B&uacute;scalo como est&aacute; en QuickBooks; ' +
+       'con ese nombre sale el invoice y con sus precios.</div>' +
+       '<input id="bTq" placeholder="Nombre del cliente o tienda" autocomplete="off" ' +
+       'style="width:100%;padding:11px;font-size:16px;border:1px solid #d5d9df;border-radius:8px">' +
+       '<div id="bTres"></div></div>';
+  $('bodega').innerHTML = h;
+  $('bTq').oninput = bBuscaTienda;
+  $('bTq').onkeydown = function(ev){ if(ev.keyCode === 13 && ev.preventDefault) ev.preventDefault(); };
+  $('bTq').focus();
+}
+function bCreaPedido(tid, nombre){
+  if(BCREA) return;
+  BCREA = true;
+  var id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() :
+    'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(ch){
+      var r = Math.random() * 16 | 0; return (ch === 'x' ? r : (r & 3 | 8)).toString(16); });
+  $('bodega').innerHTML = '<div class="cargando">Creando el pedido&hellip;</div>';
+  req('POST', SB + '/rest/v1/gd_pedidos', {id: id, tienda: nombre, tienda_id: tid, origen: 'bodega'}, true,
+    function(){ BCREA = false; abreBodega(id); },
+    function(st){
+      BCREA = false;
+      if(st === 401){ refresca(function(){ bCreaPedido(tid, nombre); }, salir); return; }
+      $('bodega').innerHTML = '<div class="vacio">No se pudo crear el pedido. Revisa el internet.</div>';
+    });
 }
 
 function bTermina(){
@@ -2441,7 +2509,9 @@ document.addEventListener('click', function(e){
         abreBodega(bab); return;
       }
       if(el.getAttribute('data-bvolver')){ BTIENDA = false; cargaBodega(); return; }
+      if(el.getAttribute('data-bnuevo')){ bNuevoPinta(); return; }
       var bti = el.getAttribute('data-btienda');
+      if(bti && !BPED && bti !== 'abre' && bti !== 'cierra'){ bCreaPedido(bti, el.getAttribute('data-btnom')); return; }
       if(bti){
         if(bti === 'abre' || bti === 'cierra'){ BTIENDA = bti === 'abre'; pintaPicking('', ''); return; }
         bPonTienda(bti, el.getAttribute('data-btnom')); return;
