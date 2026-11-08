@@ -1550,6 +1550,9 @@ function pinta(){
     if(p.origen === 'cliente' && !p.tienda_id)
       h += '<div class="nota" style="background:#fef3c7">Falta asignar el cliente real. ' +
            '<button class="pas" data-bab="' + p.id + '">ASIGNAR CLIENTE</button></div>';
+    if(est === 'nuevo' || est === 'preparando')
+      h += '<div style="margin:8px 0"><button class="bfin" data-bab="' + p.id + '" style="margin:0">' +
+           (est === 'preparando' ? 'CONTINUAR EL PEDIDO EN BODEGA' : 'ABRIR EN BODEGA PARA SURTIR') + '</button></div>';
     var ls2 = p.gd_pedido_lineas || [];
     for(j=0;j<ls2.length;j++){
       h += '<div class="ln"><div class="a"><span class="cant">' + ls2[j].cantidad + '&times;</span> ' + ls2[j].producto + '</div>';
