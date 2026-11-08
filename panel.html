@@ -246,6 +246,11 @@ h2{font-size:14px;text-transform:uppercase;letter-spacing:.5px;color:#6b7280;
 .cambt{padding:13px 22px;font-size:17px;border:0;border-radius:9px;font-weight:700;margin:4px}
 #camSig{background:#16a34a;color:#fff}
 #camCerrar{background:#fff;color:#111}
+#camQty{display:none;max-width:520px;margin:4px auto 8px;background:#ecfdf5;color:#111;border-radius:10px;padding:10px 12px;text-align:left}
+#camQty b{display:block;font-size:17px;margin-bottom:6px}
+#camQty .fila{display:flex;gap:8px}
+#camQtyN{flex:1;min-width:0;padding:12px;font-size:26px;font-weight:800;border:2px solid #16a34a;border-radius:8px}
+#camQtyOk{flex:none;padding:12px 16px;font-size:17px;font-weight:800;border:0;border-radius:8px;background:#16a34a;color:#fff}
 </style>
 </head>
 <body>
@@ -396,6 +401,9 @@ h2{font-size:14px;text-transform:uppercase;letter-spacing:.5px;color:#6b7280;
 </div>
 
 <div class="cam" id="cam">
+  <div id="camQty"><b id="camQtyT"></b>
+    <div class="fila"><input id="camQtyN" type="number" min="1" inputmode="numeric" autocomplete="off">
+    <button id="camQtyOk" type="button">OK &middot; siguiente</button></div></div>
   <div id="camVista"></div>
   <div id="camMsg">Prendiendo la c&aacute;mara&hellip;</div>
   <button class="cambt" id="camSig" type="button" style="display:none">Siguiente pieza</button>
@@ -1891,7 +1899,8 @@ function pintaPicking(msg, clase){
         bPonCant();
       };
     }
-    if($('bQty')){ $('bQty').focus(); $('bQty').select(); }
+    if(CAM){ /* el foco lo lleva la camara */ }
+    else if($('bQty')){ $('bQty').focus(); $('bQty').select(); }
     else if(nom) $('bScan').focus(); else $('bNom').focus();
   }
   if($('bTq')){
@@ -1901,13 +1910,15 @@ function pintaPicking(msg, clase){
   }
   /* Con la camara abierta, lo que dice la orden se ve tambien encima de la camara. */
   if(CAM && $('camMsg') && msg){ $('camMsg').className = clase || ''; $('camMsg').innerHTML = msg; }
+  camPide();
 }
 
 function bAviso(msg, clase){
   var m = $('bMsg');
   if(m){ m.className = 'bmsg ' + clase; m.innerHTML = msg; }
   if(CAM && $('camMsg')){ $('camMsg').className = clase; $('camMsg').innerHTML = msg; }
-  if($('bQty')) $('bQty').focus(); else if($('bScan')) $('bScan').focus();
+  if(CAM && $('camQty').style.display === 'block') $('camQtyN').focus();
+  else if($('bQty')) $('bQty').focus(); else if($('bScan')) $('bScan').focus();
 }
 
 function bEscanea(txt){
@@ -2032,8 +2043,8 @@ function bAgrega(prodId, escaneado){
    terminar, invoice en QuickBooks. */
 var BCREA = false, BPIDE = '', BCANC = false;
 /* Lo escaneado se pregunta cuantas (Manuel, 8/nov): el total que escribe queda pedido y surtido. */
-function bPonCant(){
-  var l = bLinea(BPIDE), n = parseInt($('bQty').value, 10);
+function bPonCant(valor){
+  var l = bLinea(BPIDE), n = parseInt(valor != null ? valor : $('bQty').value, 10);
   if(!l) return;
   if(!(n >= 1)){ bAviso('Escribe 1 o m&aacute;s. Para quitarlo usa <b>Quitar</b>.', 'mal'); return; }
   var surte = function(){
@@ -2480,6 +2491,7 @@ function camMsg(t, clase){ $('camMsg').className = clase || ''; $('camMsg').inne
 function camCierra(){
   $('cam').className = 'cam';
   $('camSig').style.display = 'none';
+  $('camQty').style.display = 'none';
   if(!CAM) return;
   var c = CAM; CAM = null;
   try { c.stop().then(function(){ try { c.clear(); } catch(e){} }, function(){}); } catch(e){}
@@ -2493,6 +2505,27 @@ function camLeyo(txt){
   camMsg('Le&iacute; ' + bEsc(txt) + '&hellip;', '');
   $('camSig').style.display = 'inline-block';
   bEscanea(txt);
+}
+/* Pedido hecho en bodega con la camara (Manuel, 8/nov): en cuanto pita, aqui
+   mismo pregunta cuantas; OK guarda y la camara sigue sola con el siguiente. */
+function camPide(){
+  var l = CAM && BPED && BPED.origen === 'bodega' && BPIDE ? bLinea(BPIDE) : null;
+  if(!l){
+    $('camQty').style.display = 'none';
+    if(CAM && CAM.esperaCant){ CAM.esperaCant = false; camSigue(); }
+    return;
+  }
+  $('camSig').style.display = 'none';
+  $('camQtyT').innerHTML = '&iquest;Cu&aacute;ntas de ' + bEsc(l.producto) + '?';
+  $('camQty').style.display = 'block';
+  var n = $('camQtyN');
+  n.value = l.cantidad;
+  n.focus(); n.select();
+}
+function camPonCant(){
+  if(!CAM || !BPIDE) return;
+  CAM.esperaCant = true;
+  bPonCant($('camQtyN').value);
 }
 function camSigue(){
   if(!CAM) return;
@@ -2533,6 +2566,12 @@ function camAbre(){
   });
 }
 $('camSig').onclick = camSigue;
+$('camQtyOk').onclick = camPonCant;
+$('camQtyN').onkeydown = function(ev){
+  if(ev.keyCode !== 13) return;
+  if(ev.preventDefault) ev.preventDefault();
+  camPonCant();
+};
 $('camCerrar').onclick = camCierra;
 
 /* ---- eventos ---- */
