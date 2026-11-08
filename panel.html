@@ -1466,7 +1466,7 @@ function desde(){
 
 function carga(){
   $('cuerpo').innerHTML = '<div class="cargando">Cargando&hellip;</div>';
-  var u = SB + '/rest/v1/gd_pedidos?select=id,folio,tienda,tienda_id,tienda_cliente,nota,articulos,total,creado,estado,origen,gd_pedido_lineas(producto,categoria,precio,cantidad,importe)'
+  var u = SB + '/rest/v1/gd_pedidos?select=id,folio,tienda,tienda_id,tienda_cliente,nota,articulos,total,creado,estado,origen,qb_invoice_id,gd_pedido_lineas(producto,categoria,precio,cantidad,importe)'
         + '&gd_pedido_lineas.quitado=eq.false&es_prueba=eq.false&order=creado.desc&limit=300';
   var d = desde();
   if(d) u += '&creado=gte.' + encodeURIComponent(d);
@@ -1553,6 +1553,9 @@ function pinta(){
     if(est === 'nuevo' || est === 'preparando')
       h += '<div style="margin:8px 0"><button class="bfin" data-bab="' + p.id + '" style="margin:0">' +
            (est === 'preparando' ? 'CONTINUAR EL PEDIDO EN BODEGA' : 'ABRIR EN BODEGA PARA SURTIR') + '</button></div>';
+    if(est === 'preparado' && !p.qb_invoice_id)
+      h += '<div style="margin:8px 0"><button class="bfin" data-breabre="' + p.id + '" style="margin:0">' +
+           'REABRIR Y SEGUIR AGREGANDO EN BODEGA</button></div>';
     var ls2 = p.gd_pedido_lineas || [];
     for(j=0;j<ls2.length;j++){
       h += '<div class="ln"><div class="a"><span class="cant">' + ls2[j].cantidad + '&times;</span> ' + ls2[j].producto + '</div>';
@@ -2047,6 +2050,27 @@ function bPonCant(){
     },
     function(){ bSonido(false); bAviso('No se guard&oacute; la cantidad. Revisa el internet.', 'mal'); });
 }
+/* Abrir un pedido en Bodega desde cualquier pestana. */
+function irBodega(id){
+  if($('sec-bodega').className.indexOf(' on') < 0){
+    var tb = document.querySelector('[data-sec=bodega]');
+    var ts2 = document.getElementsByClassName('tab'), ss2 = document.getElementsByClassName('panel-sec'), z;
+    for(z=0;z<ts2.length;z++) ts2[z].className = 'tab';
+    for(z=0;z<ss2.length;z++) ss2[z].className = 'panel-sec';
+    tb.className = 'tab on'; $('sec-bodega').className = 'panel-sec on';
+  }
+  window.scrollTo(0,0);
+  abreBodega(id);
+}
+/* Reabrir un pedido terminado (sin invoice) para seguir agregando. */
+function bReabre(id){
+  req('PATCH', SB + '/rest/v1/gd_pedidos?id=eq.' + id + '&qb_invoice_id=is.null', {estado: 'preparando'}, true,
+    function(){ irBodega(id); },
+    function(st){
+      if(st === 401){ refresca(function(){ bReabre(id); }, salir); return; }
+      alert('No se pudo reabrir el pedido.');
+    });
+}
 /* Cancelar no borra: el pedido queda 'cancelado' y se puede regresar en Pedidos. */
 function bCancela(){
   if(!BCANC){ BCANC = true; pintaPicking('', ''); return; }
@@ -2179,6 +2203,9 @@ function bCajaInvoice(){
       h += '<p class="ayuda">Este pedido ya va ' + etiqueta(p.estado).toLowerCase() + '.</p>';
     return h + '</div>';
   }
+  if(p.estado === 'preparado' && !p.qb_invoice_id)
+    h += '<button class="breset" data-breabre="' + p.id + '" style="display:block;margin:0 auto 10px">' +
+         '&iquest;Falt&oacute; algo? Reabrir y seguir agregando</button>';
   if(!BINV){
     h += '<p class="ayuda">Se arma con lo que se surti&oacute;. Primero te digo c&oacute;mo va a quedar; ' +
          'no se crea nada hasta el segundo bot&oacute;n.</p>' +
@@ -2545,17 +2572,10 @@ document.addEventListener('click', function(e){
       if(el.getAttribute('data-rp') && el.className.indexOf('chip') >= 0){ RPRUEBA = !RPRUEBA; cargaReportes(); return; }
       var rq = el.getAttribute('data-rq');
       if(rq !== null && rq !== undefined){ RQUIEN = (RQUIEN === rq) ? '' : rq; pintaReportes(); return; }
+      var brab = el.getAttribute('data-breabre');
+      if(brab){ bReabre(brab); return; }
       var bab = el.getAttribute('data-bab');
-      if(bab){
-        if($('sec-bodega').className.indexOf(' on') < 0){
-          var tb = document.querySelector('[data-sec=bodega]');
-          var ts2 = document.getElementsByClassName('tab'), ss2 = document.getElementsByClassName('panel-sec'), z;
-          for(z=0;z<ts2.length;z++) ts2[z].className = 'tab';
-          for(z=0;z<ss2.length;z++) ss2[z].className = 'panel-sec';
-          tb.className = 'tab on'; $('sec-bodega').className = 'panel-sec on';
-        }
-        abreBodega(bab); return;
-      }
+      if(bab){ irBodega(bab); return; }
       if(el.getAttribute('data-bvolver')){ BTIENDA = false; cargaBodega(); return; }
       if(el.getAttribute('data-bnuevo')){ bNuevoPinta(); return; }
       if(el.getAttribute('data-bqty')){ bPonCant(); return; }
