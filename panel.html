@@ -1611,6 +1611,13 @@ var BPEDS = [], BLISTOS = [], BPED = null, BPROD = null, BRESET = false, BQUITA 
 
 function bCod(s){ return String(s || '').replace(/\D/g, '').replace(/^0+/, ''); }
 /* Mismo criterio que la app: sin ceros adelante y con o sin el digito verificador. */
+/* El producto tiene ese codigo: el de QuickBooks o uno que se le enseno en Bodega. */
+function bEsDe(pr, c){
+  if(!pr) return false;
+  if(bIgual(pr.u, c)) return true;
+  for(var i=0;i<(pr.x || []).length;i++) if(bIgual(pr.x[i], c)) return true;
+  return false;
+}
 function bIgual(u, c){
   if(!u || !c) return false;
   return u === c || u.slice(0, -1) === c || c.slice(0, -1) === u;
@@ -1642,12 +1649,13 @@ function bRpc(fn, cuerpo, ok, falla){
 /* El catalogo completo, una vez: fotos, codigos, y para decir QUE se escaneo. */
 function bCatalogo(listo){
   if(BPROD){ listo(); return; }
-  req('GET', SB + '/rest/v1/gd_productos?select=id,nombre,upc,foto,precio,activo&limit=5000', null, true,
+  req('GET', SB + '/rest/v1/gd_productos?select=id,nombre,upc,foto,precio,activo,codigos_extra&limit=5000', null, true,
     function(d){
       BPROD = {};
       for(var i=0;i<(d||[]).length;i++){
         BPROD[d[i].id] = {n:d[i].nombre, u:bCod(d[i].upc), r:(d[i].upc || ''), f:(d[i].foto || ''),
-                          p:(d[i].precio || 0), a:d[i].activo};
+                          p:(d[i].precio || 0), a:d[i].activo,
+                          x:String(d[i].codigos_extra || '').split(/\s+/).map(bCod).filter(function(z){ return z; })};
       }
       listo();
     },
@@ -1817,6 +1825,16 @@ function pintaPicking(msg, clase){
          '<button class="bcam" id="bCam" type="button" aria-label="Escanear con la c&aacute;mara">&#128247;</button></div>';
   }
   h += '<div id="bMsg" class="bmsg ' + (clase || '') + '">' + (msg || '') + '</div>';
+  if(BASIG && BDESC && !terminada){
+    h += '<div class="card" style="padding:10px 12px;background:#fef3c7;border:2px solid #f59e0b">' +
+         '<b>C&oacute;digo ' + bEsc(BDESC) + ': &iquest;qu&eacute; producto es?</b>' +
+         '<div class="ayuda" style="margin:3px 0 7px">B&uacute;scalo por nombre y toca <b>Es este</b>. ' +
+         'Desde ahora ese c&oacute;digo pita con ese producto.</div>' +
+         '<input id="bAq" placeholder="Nombre del producto" autocomplete="off" ' +
+         'style="width:100%;padding:11px;font-size:16px;border:1px solid #d5d9df;border-radius:8px">' +
+         '<div id="bAres"></div>' +
+         '<div style="text-align:center"><button class="breset" data-basig="no">Cancelar</button></div></div>';
+  }
 
   var quitados = '';
   for(i=0;i<ls.length;i++){
@@ -1910,6 +1928,10 @@ function pintaPicking(msg, clase){
         bPonCant();
       };
     }
+    if($('bAq')){
+      $('bAq').oninput = bAsigBusca;
+      $('bAq').onkeydown = function(ev){ if(ev.keyCode === 13 && ev.preventDefault) ev.preventDefault(); };
+    }
     if($('bEdN')){
       $('bEdN').onkeydown = function(ev){
         if(ev.keyCode !== 13) return;
@@ -1919,6 +1941,7 @@ function pintaPicking(msg, clase){
       try { $('bEdN').focus({preventScroll: true}); } catch(e){ $('bEdN').focus(); }
       $('bEdN').select();
     }
+    else if($('bAq')){ $('bAq').focus(); }
     else if(quieto){ /* se queda donde estaba */ }
     else if(CAM){ /* el foco lo lleva la camara */ }
     else if($('bQty')){ $('bQty').focus(); $('bQty').select(); }
@@ -1958,7 +1981,7 @@ function bEscanea(txt){
   for(i=0;i<ls.length;i++){
     if(ls[i].quitado) continue;
     var pr = BPROD[ls[i].producto_id];
-    if(!pr || !bIgual(pr.u, c)) continue;
+    if(!pr || !bEsDe(pr, c)) continue;
     if(ls[i].surtido < ls[i].cantidad){ cual = ls[i]; break; }
     lleno = ls[i];
   }
@@ -1970,7 +1993,7 @@ function bEscanea(txt){
       return;
     }
     var nuevo = '', k2;
-    for(k2 in BPROD){ if(BPROD.hasOwnProperty(k2) && BPROD[k2].a && bIgual(BPROD[k2].u, c)){ nuevo = k2; break; } }
+    for(k2 in BPROD){ if(BPROD.hasOwnProperty(k2) && BPROD[k2].a && bEsDe(BPROD[k2], c)){ nuevo = k2; break; } }
     if(nuevo){ bAgrega(nuevo, true); return; }
   }
   if(!cual){
@@ -1981,9 +2004,15 @@ function bEscanea(txt){
       return;
     }
     var otro = '', k;
-    for(k in BPROD){ if(BPROD.hasOwnProperty(k) && bIgual(BPROD[k].u, c)){ otro = BPROD[k].n; break; } }
-    bAviso('&#10007; NO EST&Aacute; EN ESTE PEDIDO<br>' +
-           (otro ? 'Escaneaste: <u>' + bEsc(otro) + '</u>' : 'C&oacute;digo ' + c + ' (no lo conozco)') +
+    for(k in BPROD){ if(BPROD.hasOwnProperty(k) && bEsDe(BPROD[k], c)){ otro = BPROD[k].n; break; } }
+    if(!otro){
+      BDESC = c;
+      bAviso('&#10007; NO CONOZCO ESTE C&Oacute;DIGO: ' + c + '<br>' +
+             '<button class="bmano" data-basig="1" style="margin-top:6px;font-size:15px;font-weight:700">' +
+             '&iquest;Qu&eacute; producto es? Toca aqu&iacute;</button>', 'mal');
+      return;
+    }
+    bAviso('&#10007; NO EST&Aacute; EN ESTE PEDIDO<br>Escaneaste: <u>' + bEsc(otro) + '</u>' +
            '<br><small style="font-weight:400">Rev&iacute;salo y agarra el que dice la orden.</small>', 'mal');
     return;
   }
@@ -2037,7 +2066,7 @@ function bBuscar(){
   for(k in BPROD){
     if(!BPROD.hasOwnProperty(k) || !BPROD[k].a) continue;
     var pr = BPROD[k];
-    if(c ? bIgual(pr.u, c) : pr.n.toLowerCase().indexOf(q) >= 0){ out.push(k); if(++n >= 8) break; }
+    if(c ? bEsDe(pr, c) : pr.n.toLowerCase().indexOf(q) >= 0){ out.push(k); if(++n >= 8) break; }
   }
   var h = '';
   for(var i=0;i<out.length;i++){
@@ -2065,7 +2094,44 @@ function bAgrega(prodId, escaneado){
    Sin vendedor ni pedido de antes: se escoge el cliente, se crea el pedido
    vacio (origen 'bodega') y se va llenando escaneando. Lo demas es igual:
    terminar, invoice en QuickBooks. */
-var BCREA = false, BPIDE = '', BCANC = false, BEDITA = '', BQUIETO = false;
+var BCREA = false, BPIDE = '', BCANC = false, BEDITA = '', BQUIETO = false, BDESC = '', BASIG = false;
+/* Ensenarle un codigo (Manuel, 8/nov): la bolsa trae un codigo que QuickBooks no tiene.
+   Se guarda en codigos_extra, que el refresh de QuickBooks NO toca. */
+function bAsigBusca(){
+  var v = $('bAq').value.replace(/^\s+|\s+$/g, '').toLowerCase(), out = [], k;
+  if(v.length < 2){ $('bAres').innerHTML = ''; return; }
+  var pal = v.split(/\s+/);
+  for(k in BPROD){
+    if(!BPROD.hasOwnProperty(k) || !BPROD[k].a) continue;
+    var nm = BPROD[k].n.toLowerCase(), j, si = true;
+    for(j=0;j<pal.length;j++) if(nm.indexOf(pal[j]) < 0){ si = false; break; }
+    if(si){ out.push(k); if(out.length >= 10) break; }
+  }
+  var h = '', i;
+  for(i=0;i<out.length;i++){
+    var p2 = BPROD[out[i]];
+    h += '<div class="bln" style="margin:7px 0 0">' + bFoto(out[i], p2.n) + '<div class="nm"><b>' + bEsc(p2.n) + '</b>' +
+         '<small>' + (p2.r ? 'c&oacute;digo ' + bEsc(p2.r) : 'sin c&oacute;digo') + '</small></div>' +
+         '<button class="bmano" data-basigp="' + out[i] + '">Es este</button></div>';
+  }
+  $('bAres').innerHTML = h || '<div class="ayuda" style="margin-top:7px">No encontr&eacute; nada con eso.</div>';
+}
+function bAsigna(id){
+  var pr = BPROD[id], c = BDESC;
+  if(!pr || !c) return;
+  var lista = (pr.x || []).slice();
+  if(lista.indexOf(c) < 0) lista.push(c);
+  req('PATCH', SB + '/rest/v1/gd_productos?id=eq.' + id, {codigos_extra: lista.join(' ')}, true,
+    function(){
+      pr.x = lista; BASIG = false; BDESC = '';
+      bSonido(true);
+      bEscanea(c);   /* ya lo conoce: sigue como si lo hubiera escaneado */
+    },
+    function(st){
+      if(st === 401){ refresca(function(){ bAsigna(id); }, salir); return; }
+      bAviso('No se pudo guardar el c&oacute;digo.', 'mal');
+    });
+}
 /* Tocar el 10/10 de un renglon: se escribe la cantidad ahi mismo (Manuel, 8/nov). */
 function bEdAbre(id){ BEDITA = id; BPIDE = ''; BQUIETO = true; pintaPicking('', ''); }
 function bEdGuarda(){
@@ -2650,6 +2716,10 @@ document.addEventListener('click', function(e){
       if(el.getAttribute('data-bvolver')){ BTIENDA = false; cargaBodega(); return; }
       if(el.getAttribute('data-bnuevo')){ bNuevoPinta(); return; }
       if(el.getAttribute('data-bqty')){ bPonCant(); return; }
+      var bas = el.getAttribute('data-basig');
+      if(bas){ if(CAM) camCierra(); BASIG = bas !== 'no'; if(!BASIG) BDESC = ''; pintaPicking('', ''); return; }
+      var basp = el.getAttribute('data-basigp');
+      if(basp){ bAsigna(basp); return; }
       var bed = el.getAttribute('data-bedita');
       if(bed){ bEdAbre(bed); return; }
       if(el.getAttribute('data-bedok')){ bEdGuarda(); return; }

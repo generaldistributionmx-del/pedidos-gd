@@ -1216,3 +1216,20 @@ comment on column public.gd_pedidos.origen is 'cliente = lo hizo el propio clien
 -- le asigna la tienda real (tienda_id + tienda). Aqui queda lo que el escribio.
 alter table public.gd_pedidos add column if not exists tienda_cliente text;
 comment on column public.gd_pedidos.tienda_cliente is 'Lo que escribio el cliente como nombre de su tienda, antes de que en Bodega le asignaran la tienda real.';
+
+-- ============================================================
+--  CODIGOS QUE SE LE ENSENAN EN BODEGA (Manuel, 8/nov/2026)
+--  La bolsa a veces trae un codigo que QuickBooks no tiene. En Bodega se
+--  escanea, se escoge el producto y el codigo se guarda aqui (separados por
+--  espacio). El refresh de QuickBooks NO toca esta columna.
+-- ============================================================
+alter table public.gd_productos add column if not exists codigos_extra text;
+comment on column public.gd_productos.codigos_extra is 'Codigos de barras extra ensenados en Bodega, separados por espacio. El refresh de QuickBooks no los toca.';
+
+-- La app de vendedores busca por codigo en gd_catalogo.upc: ahi van tambien los extra.
+create or replace view public.gd_catalogo
+with (security_invoker = false) as
+  select id, nombre, descripcion, categoria, precio, foto,
+         nullif(concat_ws(' ', upc, codigos_extra), '') as upc
+  from public.gd_productos
+  where activo;
