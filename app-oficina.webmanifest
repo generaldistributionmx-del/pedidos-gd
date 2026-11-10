@@ -1,0 +1,17 @@
+{
+  "id": "./panel.html?app=oficina",
+  "name": "GD Oficina",
+  "short_name": "GD Oficina",
+  "description": "Panel de la oficina de General Distribution",
+  "lang": "es",
+  "start_url": "./panel.html",
+  "scope": "./panel.html",
+  "display": "standalone",
+  "background_color": "#1f2937",
+  "theme_color": "#1f2937",
+  "icons": [
+    { "src": "icono-oficina-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icono-oficina-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icono-oficina-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
