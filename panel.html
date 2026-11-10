@@ -1939,6 +1939,7 @@ function pintaPicking(msg, clase){
          (BCANC ? '&iquest;Seguro? Toca otra vez para CANCELAR el pedido' : 'Cancelar este pedido') +
          '</button></div>';
   } else {
+    h += bCajaEtiquetas();
     h += bCajaInvoice();
   }
   $('bodega').innerHTML = h;
@@ -2318,6 +2319,68 @@ function bReinicia(){
   bRpc('gd_bodega_reinicia', {p_pedido: BPED.id},
     function(){ abreBodega(BPED.id); },
     function(){ bAviso('No se pudo reiniciar.', 'mal'); });
+}
+
+/* ---- Etiquetas para las cajas (Manuel, 9/nov/2026) ----
+   Ya empacado, se escribe cuantas cajas son y sale una etiqueta por caja:
+   nombre de la tienda, direccion y "CAJA 3 DE 10". Sin el nombre de General
+   Distribution: lo que importa es a donde va. */
+function bCajaEtiquetas(){
+  var t = 'carta';
+  try { t = localStorage.getItem('gd_etiq') || '4x6'; } catch(e){ t = '4x6'; }
+  return '<div class="card" style="padding:10px 12px"><h3 style="margin:0 0 6px">Etiquetas para las cajas</h3>' +
+    '<div class="ayuda" style="margin:0 0 7px">Escribe cu&aacute;ntas cajas son y sale una etiqueta por caja.</div>' +
+    '<div class="bsrow" style="margin-top:0"><input id="bEtN" type="number" min="1" max="300" inputmode="numeric" placeholder="Cajas" ' +
+    'style="flex:1;min-width:0;padding:11px;font-size:20px;font-weight:800;border:1px solid #d5d9df;border-radius:8px">' +
+    '<select id="bEtT" style="flex:none;padding:10px;font-size:15px;border:1px solid #d5d9df;border-radius:8px">' +
+    '<option value="4x6"' + (t === '4x6' ? ' selected' : '') + '>Etiqueta 4x6</option>' +
+    '<option value="carta"' + (t === 'carta' ? ' selected' : '') + '>Hoja carta</option></select></div>' +
+    '<button class="bfin" data-betiq="1" style="margin-top:8px;background:#1f2937">&#128424; Imprimir etiquetas</button></div>';
+}
+function bEtiquetas(){
+  var n = parseInt($('bEtN').value, 10), tam = $('bEtT').value, p = BPED;
+  if(!(n >= 1 && n <= 300)){ bAviso('Escribe cu&aacute;ntas cajas son (de 1 a 300).', 'mal'); $('bEtN').focus(); return; }
+  try { localStorage.setItem('gd_etiq', tam); } catch(e){}
+  /* La ventana se abre YA (con el clic), si no el telefono la bloquea. */
+  var w = window.open('', '_blank');
+  if(!w){ bAviso('El navegador no dej&oacute; abrir la ventana. Permite ventanas emergentes para esta p&aacute;gina.', 'mal'); return; }
+  w.document.write('<p style="font-family:sans-serif;padding:20px">Preparando etiquetas&hellip;</p>');
+  var pinta = function(t){
+    var dir = t ? [t.direccion, [t.ciudad, t.estado].filter(function(x){ return x; }).join(', ')]
+                    .filter(function(x){ return x; }) : [];
+    var pie = [];
+    if(p.qb_invoice_num || p.qb_invoice_id) pie.push('Invoice #' + bEsc(p.qb_invoice_num || p.qb_invoice_id));
+    pie.push('Folio ' + p.folio);
+    if(p.ruta || (t && t.ruta)) pie.push('Ruta ' + bEsc(p.ruta || t.ruta));
+    var css = tam === '4x6'
+      ? '@page{size:4in 6in;margin:0}.et{width:4in;height:6in;padding:.3in}.n{font-size:34pt}.c{font-size:54pt}.d{font-size:16pt}'
+      : '@page{size:letter;margin:.5in}.et{width:7.5in;height:10in;padding:.4in}.n{font-size:54pt}.c{font-size:96pt}.d{font-size:24pt}';
+    var h = '<!doctype html><html><head><meta charset="utf-8"><title>Etiquetas ' + bEsc(p.tienda) + '</title><style>' +
+      '*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;color:#000}' + css +
+      '.et{display:flex;flex-direction:column;justify-content:space-between;page-break-after:always;break-after:page;overflow:hidden}' +
+      '.et:last-child{page-break-after:auto;break-after:auto}' +
+      '.n{font-weight:900;line-height:1.05;text-transform:uppercase;word-wrap:break-word}' +
+      '.d{margin-top:.15in;line-height:1.25}.c{font-weight:900;text-align:center;border-top:4px solid #000;border-bottom:4px solid #000;padding:.08in 0}' +
+      '.c small{display:block;font-size:.3em;letter-spacing:2px}.p{font-size:11pt;text-align:center}' +
+      '@media screen{body{background:#ccc}.et{background:#fff;margin:10px auto;box-shadow:0 0 4px #888}}' +
+      '</style></head><body>';
+    for(var i=1;i<=n;i++){
+      h += '<div class="et"><div><div class="n">' + bEsc(p.tienda) + '</div>' +
+           (dir.length ? '<div class="d">' + dir.map(bEsc).join('<br>') + '</div>' : '') + '</div>' +
+           '<div class="c"><small>CAJA</small>' + i + ' / ' + n + '</div>' +
+           '<div class="p">' + pie.join(' &middot; ') + '</div></div>';
+    }
+    h += '<script>setTimeout(function(){ window.print(); }, 400);<\/script></body></html>';
+    w.document.open(); w.document.write(h); w.document.close();
+  };
+  if(!p.tienda_id){ pinta(null); return; }
+  req('GET', SB + '/rest/v1/gd_tiendas?select=direccion,ciudad,estado,ruta&id=eq.' + p.tienda_id, null, true,
+    function(d){ pinta(d && d[0]); },
+    function(st){
+      if(st === 401){ refresca(function(){ req('GET', SB + '/rest/v1/gd_tiendas?select=direccion,ciudad,estado,ruta&id=eq.' + p.tienda_id,
+        null, true, function(d){ pinta(d && d[0]); }, function(){ pinta(null); }); }, salir); return; }
+      pinta(null);
+    });
 }
 
 /* ---- La tienda real (Manuel y Helen, 27/oct/2026) ----
@@ -2835,6 +2898,7 @@ document.addEventListener('click', function(e){
       var biv = el.getAttribute('data-binv');
       if(biv){ bInvoice(biv === 'crea'); return; }
       if(el.getAttribute('data-bruta')){ bRuta(); return; }
+      if(el.getAttribute('data-betiq')){ bEtiquetas(); return; }
       if(el.getAttribute('data-bfin')){ if(!el.disabled) bTermina(); return; }
       if(el.getAttribute('data-breset')){ bReinicia(); return; }
       var rlu = el.getAttribute('data-rolu');
