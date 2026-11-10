@@ -133,6 +133,11 @@ header{background:#1f2937;color:#fff;padding:10px 12px;position:sticky;top:0;z-i
       font-family:inherit;margin-bottom:11px}
 .empty{padding:44px 20px;text-align:center;color:#8b929c}
 .tip{padding:10px 13px;color:#6b7280;font-size:12.5px;background:#fffbeb;border-bottom:1px solid #fde68a}
+/* Vendedor sin entrar: solo se ve la caja para entrar (Manuel, 9/nov). */
+body.bloq > :not(header):not(script){display:none !important}
+body.bloq header > :not(.hd):not(.cajaent){display:none !important}
+body.bloq .cajaent{display:block !important}
+body.bloq #bent{display:none}
 </style>
 </head>
 <body>
@@ -321,6 +326,53 @@ function tokenDelEquipo(){
   try { return localStorage.getItem('gdp_tok') || ''; } catch(e){ return ''; }
 }
 function soyDelEquipo(){ return !!tokenDelEquipo(); }
+function miRol(){ try { return localStorage.getItem('gdp_rol') || ''; } catch(e){ return ''; } }
+/* El lapiz de precios: solo oficina y dueno. El vendedor solo levanta pedidos. */
+function puedePrecios(){ var r = miRol(); return soyDelEquipo() && (r === 'dueno' || r === 'oficina'); }
+/* Con la app general (sin ?t= y sin modo cliente) el que pide es un vendedor: tiene que entrar. */
+function esModoVendedor(){ return !param('t') && !MODO_CLIENTE; }
+function idDelToken(t){
+  try { return JSON.parse(atob(t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))).sub || ''; } catch(e){ return ''; }
+}
+function traePerfil(listo){
+  var t = tokenDelEquipo(), id = idDelToken(t);
+  if(!t || !id){ listo(false); return; }
+  var x = new XMLHttpRequest();
+  x.open('GET', SB_URL + '/gd_perfiles?select=nombre,rol,activo&id=eq.' + id, true);
+  x.setRequestHeader('apikey', SB_KEY);
+  x.setRequestHeader('Authorization', 'Bearer ' + t);
+  x.onreadystatechange = function(){
+    if(x.readyState !== 4) return;
+    var d = null;
+    try { d = JSON.parse(x.responseText); } catch(e){}
+    if(x.status >= 200 && x.status < 300 && d && d.length && d[0].activo){
+      try { localStorage.setItem('gdp_rol', d[0].rol || ''); localStorage.setItem('gdp_nom', d[0].nombre || ''); } catch(e){}
+      listo(true);
+    } else if(x.status === 401){
+      listo(null);   /* sesion vencida: se queda como estaba, no se saca a nadie a media venta */
+    } else { listo(false); }
+  };
+  try { x.send(null); } catch(e){ listo(null); }
+}
+function ponVendedor(){
+  if(!esModoVendedor()) return;
+  var nom = '';
+  try { nom = localStorage.getItem('gdp_nom') || ''; } catch(e){}
+  var ve = document.getElementById('vendedor');
+  if(nom && ve){ ve.value = nom; ve.readOnly = true; try { localStorage.setItem('gd_vend', nom); } catch(e){} if(window.vrMarca) vrMarca(); }
+  else if(ve){ ve.readOnly = false; }
+}
+function revisaCandado(){
+  if(!esModoVendedor()){ document.body.className = document.body.className.replace(/\bbloq\b/g, ''); return; }
+  if(soyDelEquipo()){
+    document.body.className = document.body.className.replace(/\bbloq\b/g, '');
+    ponVendedor();
+  } else {
+    if(!/\bbloq\b/.test(document.body.className)) document.body.className += ' bloq';
+    var ex = document.querySelector('#cajaent .ex');
+    if(ex) ex.innerHTML = '<b>Entra con tu usuario</b> para levantar pedidos. Si no tienes, p&iacute;dele uno a Manuel.';
+  }
+}
 function precioDe(p){
   var s = PRECIOS_TIENDA[p.i];
   return (s !== undefined && s !== null) ? Number(s) : Number(p.p || 0);
@@ -479,10 +531,20 @@ function haceEntrar(){
     try { d = JSON.parse(x.responseText); } catch(e){}
     if(x.status >= 200 && x.status < 300 && d && d.access_token){
       guardaSesion(d.access_token, d.refresh_token);
-      document.getElementById('eClave').value = '';
-      document.getElementById('cajaent').style.display = 'none';
-      pintaQuienSoy();
-      render();
+      traePerfil(function(ok){
+        if(ok === false){
+          borraSesion();
+          av.innerHTML = 'Tu usuario no est&aacute; activo. Habla con Manuel.';
+          av.style.display = 'block';
+          revisaCandado();
+          return;
+        }
+        document.getElementById('eClave').value = '';
+        document.getElementById('cajaent').style.display = 'none';
+        revisaCandado();
+        pintaQuienSoy();
+        render();
+      });
     } else {
       av.innerHTML = 'No pude entrar. Revisa el correo y la contrase&ntilde;a.';
       av.style.display = 'block';
@@ -494,6 +556,9 @@ function haceEntrar(){
 
 function salirDeAqui(){
   borraSesion();
+  try { localStorage.removeItem('gdp_rol'); localStorage.removeItem('gdp_nom'); } catch(e){}
+  var ve = document.getElementById('vendedor'); if(ve && esModoVendedor()){ ve.value = ''; ve.readOnly = false; }
+  revisaCandado();
   pintaQuienSoy();
   render();
 }
@@ -793,7 +858,7 @@ function render(){
       h += '<span class="price' + (suyo ? ' suyo' : '') + '">' + money(pre) + '</span>';
       if(suyo) h += '<span class="suyoTag">su precio</span>';
     } else { h += '<span class="nop">Precio por confirmar</span>'; }
-    if(TIENDA_ID && soyDelEquipo())
+    if(TIENDA_ID && puedePrecios())
       h += '<button class="lapiz" data-pe="' + p.i + '" title="Cambiar el precio de esta tienda">&#9998;</button>';
     h += '</div>';
     h += '</div>';
@@ -1060,6 +1125,11 @@ document.getElementById('bent').onclick = function(){
   if(soyDelEquipo()) salirDeAqui(); else abreEntrar();
 };
 document.getElementById('bhacer').onclick = haceEntrar;
+revisaCandado();
+if(soyDelEquipo()) traePerfil(function(ok){
+  if(ok === false){ salirDeAqui(); return; }   /* lo apagaron: ya no puede levantar pedidos */
+  revisaCandado(); render();
+});
 document.getElementById('eClave').onkeyup = function(ev){ if(ev.keyCode === 13) haceEntrar(); };
 pintaQuienSoy();
 

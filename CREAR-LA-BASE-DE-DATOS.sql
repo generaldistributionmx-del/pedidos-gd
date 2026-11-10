@@ -1233,3 +1233,65 @@ with (security_invoker = false) as
          nullif(concat_ws(' ', upc, codigos_extra), '') as upc
   from public.gd_productos
   where activo;
+
+-- ============================================================
+--  OFICINA Y VENDEDORES (Manuel, 9/nov/2026)
+--  rol 'dueno'    = Manuel: todo, incluido Equipo, Reportes y QuickBooks.
+--  rol 'oficina'  = su esposa y Helen: entran al panel.
+--  rol 'vendedor' = Wilmer, Diana, Manuel Antonio, Daniel, Mario: SOLO la app
+--                   de pedidos. No leen pedidos, productos ni inventario.
+--  Cada politica que decia "cualquiera con gafete activo" pasa a gd_es_oficina().
+--  El vendedor solo conserva leer tiendas (para buscar a su cliente).
+-- ============================================================
+create or replace function public.gd_es_oficina()
+returns boolean language sql stable security definer set search_path to 'public' as $$
+  select exists (select 1 from public.gd_perfiles
+                  where id = auth.uid() and activo and rol in ('dueno','oficina'));
+$$;
+create or replace function public.gd_es_equipo()
+returns boolean language sql stable security definer set search_path to 'public' as $$
+  select exists (select 1 from public.gd_perfiles where id = auth.uid() and activo);
+$$;
+revoke all on function public.gd_es_oficina() from public, anon;
+revoke all on function public.gd_es_equipo()  from public, anon;
+grant execute on function public.gd_es_oficina() to authenticated;
+grant execute on function public.gd_es_equipo()  to authenticated;
+
+do $$
+declare r record; pat text := 'EXISTS \( SELECT 1\s+FROM gd_perfiles p\s+WHERE \(\(p\.id = auth\.uid\(\)\) AND p\.activo\)\)';
+        q text; w text;
+begin
+  for r in select * from pg_policies
+            where schemaname = 'public' and tablename like 'gd_%'
+              and (coalesce(qual,'') ~ 'gd_perfiles p' or coalesce(with_check,'') ~ 'gd_perfiles p') loop
+    q := case when r.qual is not null then ' using (' || regexp_replace(r.qual, pat, 'gd_es_oficina()', 'g') || ')' else '' end;
+    w := case when r.with_check is not null then ' with check (' || regexp_replace(r.with_check, pat, 'gd_es_oficina()', 'g') || ')' else '' end;
+    execute format('alter policy %I on public.%I', r.policyname, r.tablename) || q || w;
+  end loop;
+end $$;
+
+-- El vendedor busca a su cliente en la app: puede LEER tiendas, nada mas.
+drop policy if exists gd_tiendas_vendedor_lee on public.gd_tiendas;
+create policy gd_tiendas_vendedor_lee on public.gd_tiendas for select to authenticated
+  using (public.gd_es_equipo());
+
+-- Bodega (surtir, invoice): solo oficina.
+create or replace function public.gd_bodega_equipo()
+returns boolean language sql stable security definer set search_path to 'public' as $$
+  select public.gd_es_oficina();
+$$;
+
+-- Las funciones de Bodega que revisaban "gafete activo" pasan a "es oficina".
+do $$
+declare r record; d text;
+begin
+  for r in select p.oid, p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+            where n.nspname = 'public'
+              and p.proname not in ('gd_es_equipo','gd_es_oficina','gd_nuevo_usuario')
+              and p.prosrc like '%exists (select 1 from public.gd_perfiles where id = auth.uid() and activo)%' loop
+    d := replace(pg_get_functiondef(r.oid),
+                 'exists (select 1 from public.gd_perfiles where id = auth.uid() and activo)',
+                 'public.gd_es_oficina()');
+    execute d;
+  end loop;
+end $$;
