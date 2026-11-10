@@ -102,8 +102,8 @@ async function quienLlama(req: Request): Promise<string> {
   if (!u?.id) throw new Error("401|Tu sesion ya vencio. Vuelve a entrar al panel.");
 
   const perfil = await base(`gd_perfiles?select=rol,activo&id=eq.${u.id}`);
-  if (!perfil?.length || !perfil[0].activo || perfil[0].rol !== "dueno") {
-    throw new Error("403|Solo el dueno puede conectar o refrescar el catalogo.");
+  if (!perfil?.length || !perfil[0].activo || !["dueno", "oficina"].includes(perfil[0].rol)) {
+    throw new Error("403|Solo el dueno o la oficina pueden usar QuickBooks.");
   }
   return u.id as string;
 }

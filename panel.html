@@ -512,7 +512,8 @@ function quienSoy(){
       }
       if(d && d.length){
         $('quien').innerHTML = d[0].nombre + (d[0].rol === 'dueno' ? '' : ' &middot; ' + d[0].rol);
-        esDueno = (d[0].rol === 'dueno');
+        /* Oficina hace todo lo que hace el dueno (Manuel, 9/nov). */
+        esDueno = (d[0].rol === 'dueno' || d[0].rol === 'oficina');
         $('tabEquipo').style.display = esDueno ? 'inline-block' : 'none';
         $('tabReportes').style.display = esDueno ? 'inline-block' : 'none';
         $('cardQb').style.display = esDueno ? 'block' : 'none';

@@ -50,8 +50,8 @@ Deno.serve(async (req: Request) => {
       .eq('id', quien.user.id)
       .maybeSingle()
 
-    if (!perfil || perfil.activo !== true || perfil.rol !== 'dueno') {
-      return resp({ error: 'Solo el dueno puede dar de alta a alguien.' }, 403)
+    if (!perfil || perfil.activo !== true || !['dueno', 'oficina'].includes(perfil.rol)) {
+      return resp({ error: 'Solo el dueno o la oficina pueden dar de alta a alguien.' }, 403)
     }
 
     const body = await req.json().catch(() => ({}))

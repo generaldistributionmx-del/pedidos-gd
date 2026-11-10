@@ -1295,3 +1295,11 @@ begin
     execute d;
   end loop;
 end $$;
+
+-- Oficina hace TODO lo que hace el dueno (Manuel, 9/nov/2026): invoices,
+-- QuickBooks, reportes y dar de alta. El vendedor sigue sin panel.
+create or replace function public.gd_es_dueno()
+returns boolean language sql stable security definer set search_path to 'public' as $$
+  select exists (select 1 from public.gd_perfiles
+                  where id = auth.uid() and activo and rol in ('dueno','oficina'));
+$$;
