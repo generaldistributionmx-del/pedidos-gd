@@ -1303,3 +1303,15 @@ returns boolean language sql stable security definer set search_path to 'public'
   select exists (select 1 from public.gd_perfiles
                   where id = auth.uid() and activo and rol in ('dueno','oficina'));
 $$;
+
+-- El vendedor SI puede cambiarle el precio a su tienda desde la app (Manuel, 10/nov/2026).
+-- Leer, poner y cambiar; borrar no.
+drop policy if exists gd_precio_tienda_vend_lee on public.gd_precio_tienda;
+create policy gd_precio_tienda_vend_lee on public.gd_precio_tienda for select to authenticated
+  using (public.gd_es_equipo());
+drop policy if exists gd_precio_tienda_vend_pone on public.gd_precio_tienda;
+create policy gd_precio_tienda_vend_pone on public.gd_precio_tienda for insert to authenticated
+  with check (public.gd_es_equipo());
+drop policy if exists gd_precio_tienda_vend_cambia on public.gd_precio_tienda;
+create policy gd_precio_tienda_vend_cambia on public.gd_precio_tienda for update to authenticated
+  using (public.gd_es_equipo()) with check (public.gd_es_equipo());

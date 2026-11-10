@@ -328,8 +328,9 @@ function tokenDelEquipo(){
 }
 function soyDelEquipo(){ return !!tokenDelEquipo(); }
 function miRol(){ try { return localStorage.getItem('gdp_rol') || ''; } catch(e){ return ''; } }
-/* El lapiz de precios: solo oficina y dueno. El vendedor solo levanta pedidos. */
-function puedePrecios(){ var r = miRol(); return soyDelEquipo() && (r === 'dueno' || r === 'oficina'); }
+/* El lapiz de precios: todo el que entro con su usuario, vendedores incluidos
+   (Manuel, 10/nov: el vendedor le da su precio al cliente en la tienda). */
+function puedePrecios(){ return soyDelEquipo(); }
 /* Con la app general (sin ?t= y sin modo cliente) el que pide es un vendedor: tiene que entrar. */
 function esModoVendedor(){ return !param('t') && !MODO_CLIENTE; }
 function idDelToken(t){
