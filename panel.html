@@ -379,6 +379,7 @@ h2{font-size:14px;text-transform:uppercase;letter-spacing:.5px;color:#6b7280;
         <input id="nEmail" placeholder="correo@minegocio.app" autocomplete="off">
         <input id="nClave" placeholder="Contrase&ntilde;a temporal (m&iacute;nimo 8)" autocomplete="off">
         <select id="nRol" style="width:100%;padding:12px;font-size:16px;border:1px solid #d5d9df;border-radius:8px;margin-bottom:8px">
+          <option value="">&iquest;Oficina o vendedor? Escoge&hellip;</option>
           <option value="vendedor">Vendedor &mdash; solo la app de pedidos</option>
           <option value="oficina">Oficina &mdash; entra al panel</option>
         </select>
@@ -1458,6 +1459,8 @@ function prendeApaga(id, val){
 function daDeAlta(){
   var n = $('nNombre').value, e = $('nEmail').value, c = $('nClave').value, rol = $('nRol').value;
   if(!n || !e || !c){ aviso('mAlta', 'Llena los tres campos.', false); return; }
+  if(!rol){ aviso('mAlta', 'Escoge si es <b>Oficina</b> o <b>Vendedor</b>.', false); return; }
+  if(n.indexOf('@') >= 0){ aviso('mAlta', 'En <b>Nombre</b> va el nombre de la persona (ej. Helen), no el correo.', false); return; }
   req('POST', SB + '/functions/v1/gd-crear-usuario', {nombre:n, email:e, clave:c}, true,
     function(){
       /* Nace vendedor; si es de oficina se le cambia aqui mismo. */
