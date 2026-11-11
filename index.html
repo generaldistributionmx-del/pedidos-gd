@@ -1023,7 +1023,9 @@ function render(){
   }
   shown = out;
   document.getElementById('count').innerHTML = out.length + (out.length===1 ? ' producto' : ' productos') + (cat ? ' en ' + cat : '') + '<span class="act" id="refrescar">Actualizar</span>';
-  var lim = Math.min(out.length, 200), h = '';
+  /* Manuel (11/nov/2026): que salgan TODOS, sin tope de 200. El vendedor no
+     va a buscar ni sabe como se llaman. Las fotos cargan al ir bajando (lazy). */
+  var lim = out.length, h = '';
   for(i=0;i<lim;i++){
     p = out[i];
     var n = cart[p.i] || 0;
@@ -1051,7 +1053,6 @@ function render(){
     h += '</div></div>';
   }
   if(!out.length) h = '<div class="empty">No encontr&eacute; nada con eso.<br>Prueba con menos letras.</div>';
-  else if(out.length > lim) h += '<div class="empty">Hay ' + (out.length-lim) + ' m&aacute;s. Usa el buscador para acotar.</div>';
   document.getElementById('grid').innerHTML = h;
 }
 /* Repinta SOLO el renglon tocado. Redibujar los 551 se come los toques en telefonos viejos. */
