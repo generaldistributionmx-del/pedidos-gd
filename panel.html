@@ -2751,7 +2751,9 @@ function pintaRepVendedores(){
       var dd2 = v3.dias[v3.od[j]], rutas = [], r, sv = 0, z3;
       for(r in dd2.ruta) if(dd2.ruta.hasOwnProperty(r)) rutas.push(r);
       for(z3 in dd2.sinv) if(!dd2.tiendas[z3]) sv++;
-      var a1 = dd2.emp || dd2.ini, a2 = dd2.ter || dd2.fin;
+      /* de lo mas temprano (empezo o primer pedido) a lo mas tarde (termino o ultimo pedido) */
+      var a1 = [dd2.emp, dd2.ini].filter(function(z){ return z; }).sort()[0];
+      var a2 = [dd2.ter, dd2.fin].filter(function(z){ return z; }).sort().pop();
       var hrs = (a1 && a2 && a2 > a1) ? rDur(new Date(a2) - new Date(a1)) : '&mdash;';
       h += '<tr><td><b>' + dd2.f.getDate() + '/' + (dd2.f.getMonth()+1) + '</b></td><td>' + (dd2.emp ? rHora(dd2.emp) : '&mdash;') +
            '</td><td>' + (dd2.ini ? rHora(dd2.ini) : '&mdash;') + '</td><td>' + (dd2.fin ? rHora(dd2.fin) : '&mdash;') +
