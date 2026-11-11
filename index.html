@@ -101,6 +101,9 @@ header{background:#1f2937;color:#fff;padding:10px 12px;position:sticky;top:0;z-i
 .b:active{background:#eef0f3}
 .b.add{background:#1f2937;color:#fff;border-color:#1f2937}
 .qty{display:inline-block;width:34px;text-align:center;font-weight:700;font-size:16px;vertical-align:middle}
+/* Tocar el numero para escribir la cantidad (Manuel Antonio, 10/nov) */
+.qty[data-q]{cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.qin{width:58px;padding:5px 2px;font-size:17px;font-weight:700;text-align:center;border:2px solid #16a34a;border-radius:7px;vertical-align:middle}
 .card.sel{box-shadow:0 0 0 2px #1f2937}
 .bar{position:fixed;left:0;right:0;bottom:0;background:#1f2937;color:#fff;padding:11px 13px;z-index:60;
      display:table;width:100%}
@@ -867,7 +870,7 @@ function render(){
     h += '<div class="cell stp">';
     if(n > 0){
       h += '<button class="b" data-m="' + p.i + '">&minus;</button>';
-      h += '<span class="qty" id="q' + p.i + '">' + n + '</span>';
+      h += '<span class="qty" id="q' + p.i + '" data-q="' + p.i + '">' + n + '</span>';
     }
     h += '<button class="b add" data-a="' + p.i + '">+</button>';
     h += '</div></div>';
@@ -888,10 +891,31 @@ function paintCard(id){
   if(!box) return;
   if(n > 0){
     h += '<button class="b" data-m="' + id + '">&minus;</button>';
-    h += '<span class="qty">' + n + '</span>';
+    h += '<span class="qty" data-q="' + id + '">' + n + '</span>';
   }
   h += '<button class="b add" data-a="' + id + '">+</button>';
   box.innerHTML = h;
+}
+/* Tocar el numero: se abre el teclado y se escribe la cantidad (30 en vez de 30 toques). */
+function escribeCantidad(sp){
+  var id = sp.getAttribute('data-q');
+  var inp = document.createElement('input');
+  inp.type = 'number'; inp.min = '0'; inp.setAttribute('inputmode', 'numeric');
+  inp.className = 'qin'; inp.value = cart[id] || 0;
+  sp.parentNode.replaceChild(inp, sp);
+  var hecho = false;
+  var pon = function(){
+    if(hecho) return; hecho = true;
+    var n = parseInt(inp.value, 10);
+    if(isNaN(n) || n < 0) n = cart[id] || 0;
+    if(n > 9999) n = 9999;
+    if(n === 0) delete cart[id]; else cart[id] = n;
+    save(); paintBar(); paintCard(id);
+    if(document.getElementById('sheet').className.indexOf('on')>=0) lines();
+  };
+  inp.onkeydown = function(ev){ if(ev.keyCode === 13){ if(ev.preventDefault) ev.preventDefault(); inp.blur(); } };
+  inp.onblur = pon;
+  inp.focus(); try { inp.select(); } catch(e){}
 }
 function bump(id, d){
   var n = (cart[id] || 0) + d;
@@ -908,7 +932,7 @@ function lines(){
     var pu9 = precioDe(p);
     h += '<div class="meta">' + (pu9>0 ? money(pu9) + ' c/u &middot; ' + money(pu9*n) : 'precio por confirmar') + '</div></div>';
     h += '<div class="b2"><button class="b" data-m="' + p.i + '">&minus;</button>';
-    h += '<span class="qty">' + n + '</span>';
+    h += '<span class="qty" data-q="' + p.i + '">' + n + '</span>';
     h += '<button class="b add" data-a="' + p.i + '">+</button></div></div>';
   }
   if(!any) h = '<div class="empty">Todav&iacute;a no has puesto nada.</div>';
@@ -951,6 +975,7 @@ document.addEventListener('click', function(e){
       if(tc){ eligeTienda(tc); return; }
       var pe = el.getAttribute('data-pe');
       if(pe){ abreEditor(pe); return; }
+      if(el.getAttribute('data-q')){ escribeCantidad(el); return; }
       var a = el.getAttribute('data-a'), m = el.getAttribute('data-m'), c = el.getAttribute('data-c');
       if(a){ bump(a, 1); if(document.getElementById('sheet').className.indexOf('on')>=0) lines(); return; }
       if(m){ bump(m, -1); if(document.getElementById('sheet').className.indexOf('on')>=0) lines(); return; }
