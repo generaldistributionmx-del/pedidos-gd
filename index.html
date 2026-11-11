@@ -56,6 +56,13 @@ header{background:#1f2937;color:#fff;padding:10px 12px;position:sticky;top:0;z-i
 #q{width:100%;padding:11px 12px;font-size:16px;border:1px solid #d5d9df;border-radius:8px;background:#f8f9fa}
 .qrow{display:flex;gap:7px}
 .vr{display:flex;gap:7px;margin-top:7px}
+/* El dia del vendedor (Manuel, 10/nov) */
+.dia{display:none;gap:6px;margin-top:7px;align-items:center;flex-wrap:wrap}
+.dia.on{display:flex}
+.dia button{border:0;border-radius:8px;padding:8px 11px;font-size:14px;font-weight:700;background:#16a34a;color:#fff}
+.dia button.gris{background:#e5e7eb;color:#111}
+.dia button.rojo{background:#fee2e2;color:#991b1b}
+.dia .hora{color:#d1d5db;font-size:13px;flex:1;min-width:120px}
 .vr select,.vr input{flex:1;min-width:0;padding:10px 11px;font-size:15px;border:0;border-radius:8px;background:#fff;color:#111}
 .vr .falta{outline:2px solid #f59e0b}
 .qrow #q{flex:1;min-width:0;width:auto}
@@ -165,6 +172,7 @@ body.bloq #bent{display:none}
     <input id="vendedor" list="vendedores" placeholder="Vendedor (nombre o n&uacute;mero)" autocomplete="off">
     <datalist id="vendedores"></datalist>
   </div>
+  <div class="dia" id="dia"></div>
   <div class="sug"><div class="sugl" id="sugl" style="display:none"></div></div>
   <div class="dsd" id="dsd" style="display:none"></div>
 </header>
@@ -359,6 +367,121 @@ function traePerfil(listo){
   };
   try { x.send(null); } catch(e){ listo(null); }
 }
+/* La sesion vence cada hora: se renueva sola antes de vencer, con el refresh token. */
+function expDelToken(t){
+  try { return JSON.parse(atob(t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))).exp || 0; } catch(e){ return 0; }
+}
+var RENOVANDO = false;
+function renuevaSesion(listo){
+  var ref = ''; try { ref = localStorage.getItem('gdp_ref') || ''; } catch(e){}
+  if(!ref || RENOVANDO){ if(listo) listo(false); return; }
+  RENOVANDO = true;
+  var x = new XMLHttpRequest();
+  x.open('POST', SB_URL.replace('/rest/v1','') + '/auth/v1/token?grant_type=refresh_token', true);
+  x.setRequestHeader('apikey', SB_KEY);
+  x.setRequestHeader('Content-Type', 'application/json');
+  x.onreadystatechange = function(){
+    if(x.readyState !== 4) return;
+    RENOVANDO = false;
+    var d = null; try { d = JSON.parse(x.responseText); } catch(e){}
+    if(x.status >= 200 && x.status < 300 && d && d.access_token){ guardaSesion(d.access_token, d.refresh_token); if(listo) listo(true); }
+    else if(listo) listo(false);
+  };
+  try { x.send(JSON.stringify({refresh_token: ref})); } catch(e){ RENOVANDO = false; if(listo) listo(false); }
+}
+function sesionAlDia(listo){
+  var t = tokenDelEquipo();
+  if(!t){ if(listo) listo(false); return; }
+  if(expDelToken(t) - Date.now()/1000 > 300){ if(listo) listo(true); return; }
+  renuevaSesion(listo);
+}
+setInterval(function(){ if(soyDelEquipo()) sesionAlDia(); }, 60000);
+
+/* ---- El dia del vendedor: Empezar, Visite sin venta, Terminar ---- */
+var DIA = {empieza: null, termina: null, visitas: 0};
+function hoyIso(){ var d = new Date(); d.setHours(0,0,0,0); return d.toISOString(); }
+function horaCorta(iso){
+  var d = new Date(iso), h = d.getHours(), m = d.getMinutes(), ap = h >= 12 ? 'pm' : 'am';
+  h = h % 12; if(h === 0) h = 12; return h + ':' + (m < 10 ? '0' : '') + m + ' ' + ap;
+}
+function pintaDia(msg){
+  var c = document.getElementById('dia');
+  if(!c) return;
+  if(!esModoVendedor() || !soyDelEquipo()){ c.className = 'dia'; c.innerHTML = ''; return; }
+  var h = '';
+  if(!DIA.empieza){
+    h = '<button data-dia="empieza">&#9654; Empezar mi d&iacute;a</button>' +
+        '<span class="hora">' + (msg || 'Toca al llegar a tu primera tienda.') + '</span>';
+  } else {
+    h = '<span class="hora">' + (msg || ('Empezaste ' + horaCorta(DIA.empieza) +
+        (DIA.visitas ? ' &middot; ' + DIA.visitas + ' sin venta' : '') +
+        (DIA.termina ? ' &middot; terminaste ' + horaCorta(DIA.termina) : ''))) + '</span>' +
+        '<button class="gris" data-dia="visita">Visit&eacute; sin venta</button>' +
+        (DIA.termina ? '' : '<button class="rojo" data-dia="termina">' +
+          (DIA.confirma ? '&iquest;Seguro? Toca otra vez' : 'Terminar mi d&iacute;a') + '</button>');
+  }
+  c.innerHTML = h; c.className = 'dia on';
+}
+function traeDia(){
+  if(!esModoVendedor() || !soyDelEquipo()){ pintaDia(); return; }
+  sesionAlDia(function(){
+    var id = idDelToken(tokenDelEquipo());
+    var x = new XMLHttpRequest();
+    x.open('GET', SB_URL + '/gd_vendedor_eventos?select=tipo,creado&usuario_id=eq.' + id +
+                  '&creado=gte.' + encodeURIComponent(hoyIso()) + '&order=creado.asc', true);
+    x.setRequestHeader('apikey', SB_KEY);
+    x.setRequestHeader('Authorization', 'Bearer ' + tokenDelEquipo());
+    x.onreadystatechange = function(){
+      if(x.readyState !== 4) return;
+      var d = null; try { d = JSON.parse(x.responseText); } catch(e){}
+      DIA = {empieza: null, termina: null, visitas: 0};
+      if(x.status >= 200 && x.status < 300 && d){
+        for(var i=0;i<d.length;i++){
+          if(d[i].tipo === 'empieza' && !DIA.empieza) DIA.empieza = d[i].creado;
+          if(d[i].tipo === 'termina') DIA.termina = d[i].creado;
+          if(d[i].tipo === 'visita') DIA.visitas++;
+        }
+      }
+      pintaDia();
+    };
+    try { x.send(null); } catch(e){ pintaDia(); }
+  });
+}
+function marcaDia(tipo){
+  var tienda = (document.getElementById('tienda').value || '').replace(/^\s+|\s+$/g, '');
+  if(tipo === 'visita' && !tienda){
+    pintaDia('Primero escribe o escoge la tienda arriba.');
+    document.getElementById('tienda').focus(); return;
+  }
+  /* confirm() puede estar bloqueado en la app: se confirma tocando dos veces. */
+  if(tipo === 'termina' && !DIA.confirma){ DIA.confirma = true; pintaDia(); return; }
+  DIA.confirma = false;
+  var nom = ''; try { nom = localStorage.getItem('gdp_nom') || ''; } catch(e){}
+  var cuerpo = {vendedor: nom || vrVal('vendedor') || 'Sin nombre', tipo: tipo};
+  if(tipo === 'visita'){ cuerpo.tienda = tienda; if(TIENDA_ID) cuerpo.tienda_id = TIENDA_ID; }
+  pintaDia('Guardando&hellip;');
+  sesionAlDia(function(){
+    var x = new XMLHttpRequest();
+    x.open('POST', SB_URL + '/gd_vendedor_eventos', true);
+    x.setRequestHeader('apikey', SB_KEY);
+    x.setRequestHeader('Authorization', 'Bearer ' + tokenDelEquipo());
+    x.setRequestHeader('Content-Type', 'application/json');
+    x.setRequestHeader('Prefer', 'return=minimal');
+    x.onreadystatechange = function(){
+      if(x.readyState !== 4) return;
+      if(x.status >= 200 && x.status < 300){
+        var ahora = new Date().toISOString();
+        if(tipo === 'empieza') DIA.empieza = ahora;
+        if(tipo === 'termina') DIA.termina = ahora;
+        if(tipo === 'visita') DIA.visitas++;
+        pintaDia(tipo === 'visita' ? '&#10003; Visita a ' + tienda.replace(/</g,'&lt;') + ' guardada.' : null);
+        if(tipo === 'visita') setTimeout(function(){ pintaDia(); }, 3000);
+      } else { pintaDia('No se guard&oacute;. Revisa el internet y vuelve a tocar.'); }
+    };
+    try { x.send(JSON.stringify(cuerpo)); } catch(e){ pintaDia('No se guard&oacute;.'); }
+  });
+}
+
 function ponVendedor(){
   if(!esModoVendedor()) return;
   var nom = '';
@@ -372,7 +495,9 @@ function revisaCandado(){
   if(soyDelEquipo()){
     document.body.className = document.body.className.replace(/\bbloq\b/g, '');
     ponVendedor();
+    traeDia();
   } else {
+    pintaDia();
     if(!/\bbloq\b/.test(document.body.className)) document.body.className += ' bloq';
     var ex = document.querySelector('#cajaent .ex');
     if(ex) ex.innerHTML = '<b>Entra con tu usuario</b> para levantar pedidos. Si no tienes, p&iacute;dele uno a Manuel.';
@@ -971,6 +1096,8 @@ document.addEventListener('click', function(e){
       return;
     }
     if(el.getAttribute){
+      var dia = el.getAttribute('data-dia');
+      if(dia){ marcaDia(dia); return; }
       var tc = el.getAttribute('data-tc');
       if(tc){ eligeTienda(tc); return; }
       var pe = el.getAttribute('data-pe');
@@ -1153,10 +1280,10 @@ document.getElementById('bent').onclick = function(){
 };
 document.getElementById('bhacer').onclick = haceEntrar;
 revisaCandado();
-if(soyDelEquipo()) traePerfil(function(ok){
+if(soyDelEquipo()) sesionAlDia(function(){ traePerfil(function(ok){
   if(ok === false){ salirDeAqui(); return; }   /* lo apagaron: ya no puede levantar pedidos */
   revisaCandado(); render();
-});
+}); });
 document.getElementById('eClave').onkeyup = function(ev){ if(ev.keyCode === 13) haceEntrar(); };
 pintaQuienSoy();
 

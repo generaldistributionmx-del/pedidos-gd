@@ -1315,3 +1315,31 @@ create policy gd_precio_tienda_vend_pone on public.gd_precio_tienda for insert t
 drop policy if exists gd_precio_tienda_vend_cambia on public.gd_precio_tienda;
 create policy gd_precio_tienda_vend_cambia on public.gd_precio_tienda for update to authenticated
   using (public.gd_es_equipo()) with check (public.gd_es_equipo());
+
+-- ============================================================
+--  EL DIA DEL VENDEDOR (Manuel, 10/nov/2026)
+--  Desde la app: "Empezar mi dia", "Visite sin venta" y "Terminar mi dia".
+--  Con eso el reporte de Vendedores sabe a que hora entro y salio, y cuantas
+--  tiendas visito aunque no le compraran. No se borra nada.
+-- ============================================================
+create table if not exists public.gd_vendedor_eventos (
+  id          uuid primary key default gen_random_uuid(),
+  usuario_id  uuid not null default auth.uid(),
+  vendedor    text not null,
+  tipo        text not null check (tipo in ('empieza','visita','termina')),
+  tienda      text,
+  tienda_id   uuid,
+  nota        text,
+  creado      timestamptz not null default now()
+);
+create index if not exists gd_vend_ev_creado_idx on public.gd_vendedor_eventos (creado desc);
+alter table public.gd_vendedor_eventos enable row level security;
+revoke all on public.gd_vendedor_eventos from anon;
+grant select, insert on public.gd_vendedor_eventos to authenticated;
+
+drop policy if exists gd_vend_ev_pone on public.gd_vendedor_eventos;
+create policy gd_vend_ev_pone on public.gd_vendedor_eventos for insert to authenticated
+  with check (public.gd_es_equipo() and usuario_id = auth.uid());
+drop policy if exists gd_vend_ev_lee on public.gd_vendedor_eventos;
+create policy gd_vend_ev_lee on public.gd_vendedor_eventos for select to authenticated
+  using (usuario_id = auth.uid() or public.gd_es_oficina());

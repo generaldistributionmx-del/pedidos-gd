@@ -2663,22 +2663,28 @@ function pintaRepInvoices(){
    cuantos pedidos y cuanto vendio. Solo pedidos de la app de vendedores
    (no Bodega, no la liga de clientes), sin cancelados, y sin la gente de
    oficina. "Tiendas" = tiendas con pedido: la app no sabe de visitas sin venta. */
-var RVEN = [], RVSEL = '';
+var RVEN = [], RVEV = [], RVSEL = '';
 function cargaRepVendedores(){
   var u = SB + '/rest/v1/gd_pedidos?select=id,folio,tienda,tienda_id,total,creado,vendedor,ruta,es_prueba,estado' +
           '&vendedor=not.is.null&origen=is.null&estado=neq.cancelado&order=creado.asc&limit=5000';
   if(RDIAS) u += '&creado=gte.' + encodeURIComponent(rDesde());
   if(!RPRUEBA) u += '&es_prueba=eq.false';
+  var ue = SB + '/rest/v1/gd_vendedor_eventos?select=vendedor,tipo,tienda,tienda_id,creado&order=creado.asc&limit=5000';
+  if(RDIAS) ue += '&creado=gte.' + encodeURIComponent(rDesde());
   req('GET', u, null, true,
     function(d){
-      req('GET', SB + '/rest/v1/gd_perfiles?select=nombre,rol', null, true,
-        function(pf){
-          var ofi = {}, i;
-          for(i=0;i<(pf || []).length;i++) if(pf[i].rol !== 'vendedor') ofi[rLlave(pf[i].nombre)] = true;
-          RVEN = (d || []).filter(function(x){ return x.vendedor && String(x.vendedor).trim() && !ofi[rLlave(x.vendedor)]; });
-          pintaRepVendedores();
-        },
-        function(){ RVEN = d || []; pintaRepVendedores(); });
+      req('GET', ue, null, true, function(ev){
+        RVEV = ev || [];
+        req('GET', SB + '/rest/v1/gd_perfiles?select=nombre,rol', null, true,
+          function(pf){
+            var ofi = {}, i;
+            for(i=0;i<(pf || []).length;i++) if(pf[i].rol !== 'vendedor') ofi[rLlave(pf[i].nombre)] = true;
+            var vale = function(x){ return x.vendedor && String(x.vendedor).trim() && !ofi[rLlave(x.vendedor)]; };
+            RVEN = (d || []).filter(vale); RVEV = RVEV.filter(vale);
+            pintaRepVendedores();
+          },
+          function(){ RVEN = d || []; pintaRepVendedores(); });
+      }, function(){ RVEV = []; RVEN = d || []; pintaRepVendedores(); });
     },
     function(st){
       if(st === 401){ refresca(cargaReportes, salir); return; }
@@ -2687,48 +2693,70 @@ function cargaRepVendedores(){
 }
 function pintaRepVendedores(){
   var h = rChips(), i, ven = {}, orden = [];
-  for(i=0;i<RVEN.length;i++){
-    var x = RVEN[i], k = rLlave(x.vendedor), d = new Date(x.creado);
+  var diaDe = function(x){
+    var k = rLlave(x.vendedor), d = new Date(x.creado);
     var dk = d.getFullYear() + '-' + (d.getMonth()+1 < 10 ? '0' : '') + (d.getMonth()+1) + '-' + (d.getDate() < 10 ? '0' : '') + d.getDate();
-    if(!ven[k]){ ven[k] = {n: x.vendedor, dias: {}, od: [], ped: 0, t: 0, tiendas: {}}; orden.push(k); }
-    var v = ven[k], t = parseFloat(x.total) || 0, tk = x.tienda_id || rLlave(x.tienda);
-    if(!v.dias[dk]){ v.dias[dk] = {f: d, ini: x.creado, fin: x.creado, ped: 0, t: 0, tiendas: {}, ruta: {}}; v.od.push(dk); }
-    var dd = v.dias[dk];
-    dd.fin = x.creado; dd.ped++; dd.t += t; dd.tiendas[tk] = 1; if(x.ruta) dd.ruta[x.ruta] = 1;
-    v.ped++; v.t += t; v.tiendas[tk] = 1;
+    if(!ven[k]){ ven[k] = {n: x.vendedor, dias: {}, od: [], ped: 0, t: 0, tiendas: {}, sinv: 0}; orden.push(k); }
+    var v = ven[k];
+    if(!v.dias[dk]){ v.dias[dk] = {f: d, emp: null, ter: null, ini: null, fin: null, ped: 0, t: 0, tiendas: {}, sinv: {}, ruta: {}}; v.od.push(dk); }
+    return {v: v, d: v.dias[dk]};
+  };
+  for(i=0;i<RVEN.length;i++){
+    var x = RVEN[i], q = diaDe(x), t = parseFloat(x.total) || 0, tk = x.tienda_id || rLlave(x.tienda);
+    if(!q.d.ini) q.d.ini = x.creado;
+    q.d.fin = x.creado; q.d.ped++; q.d.t += t; q.d.tiendas[tk] = 1; if(x.ruta) q.d.ruta[x.ruta] = 1;
+    q.v.ped++; q.v.t += t; q.v.tiendas[tk] = 1;
+  }
+  for(i=0;i<RVEV.length;i++){
+    var e = RVEV[i], q2 = diaDe(e);
+    if(e.tipo === 'empieza' && !q2.d.emp) q2.d.emp = e.creado;
+    if(e.tipo === 'termina') q2.d.ter = e.creado;
+    if(e.tipo === 'visita'){
+      var tk2 = e.tienda_id || rLlave(e.tienda);
+      q2.d.sinv[tk2] = 1; q2.v.tiendas[tk2] = 1;
+    }
+  }
+  var cuenta = function(o){ var n = 0, z; for(z in o) if(o.hasOwnProperty(z)) n++; return n; };
+  var visitas = function(dd){ var o = {}, z; for(z in dd.tiendas) o[z] = 1; for(z in dd.sinv) o[z] = 1; return cuenta(o); };
+  for(i=0;i<orden.length;i++){
+    var vv = ven[orden[i]], j2;
+    for(j2=0;j2<vv.od.length;j2++){ var dx = vv.dias[vv.od[j2]], z2; for(z2 in dx.sinv) if(!dx.tiendas[z2]) vv.sinv++; }
+    vv.od.sort();
   }
   orden.sort(function(a, b){ return ven[b].t - ven[a].t; });
-  var cuenta = function(o){ var n = 0, z; for(z in o) if(o.hasOwnProperty(z)) n++; return n; };
 
   if(!orden.length){
-    $('reportes').innerHTML = h + '<div class="vacio" style="padding:22px">Ning&uacute;n vendedor mand&oacute; pedidos en este periodo.</div>';
+    $('reportes').innerHTML = h + '<div class="vacio" style="padding:22px">Ning&uacute;n vendedor trabaj&oacute; en este periodo.</div>';
     return;
   }
-  /* Resumen: uno por vendedor */
   h += '<h2>Resumen por vendedor</h2><div class="rtab"><table><thead><tr><th>Vendedor</th><th>D&iacute;as</th>' +
-       '<th>Tiendas</th><th>Pedidos</th><th>Vendi&oacute;</th><th>Promedio por d&iacute;a</th></tr></thead><tbody>';
+       '<th>Tiendas visitadas</th><th>Sin venta</th><th>Pedidos</th><th>Vendi&oacute;</th><th>Promedio por d&iacute;a</th></tr></thead><tbody>';
   for(i=0;i<orden.length;i++){
     var v2 = ven[orden[i]], nd = v2.od.length;
     h += '<tr data-rvsel="' + bEsc(orden[i]) + '" style="cursor:pointer' + (RVSEL === orden[i] ? ';background:#ecfdf5' : '') + '">' +
-         '<td style="text-align:left"><b>' + bEsc(v2.n) + '</b></td><td>' + nd + '</td><td>' + cuenta(v2.tiendas) + '</td><td>' + v2.ped +
-         '</td><td><b>' + money(v2.t) + '</b></td><td>' + money(nd ? v2.t / nd : 0) + '</td></tr>';
+         '<td style="text-align:left"><b>' + bEsc(v2.n) + '</b></td><td>' + nd + '</td><td>' + cuenta(v2.tiendas) + '</td><td>' + v2.sinv +
+         '</td><td>' + v2.ped + '</td><td><b>' + money(v2.t) + '</b></td><td>' + money(nd ? v2.t / nd : 0) + '</td></tr>';
   }
   h += '</tbody></table></div><p class="ayuda" style="padding:0 3px">Toca un vendedor para ver solo el suyo. ' +
-       '<b>Tiendas</b> = tiendas a las que les levant&oacute; pedido. Las horas van del primer pedido al &uacute;ltimo.</p>';
+       '<b>Empez&oacute; / Termin&oacute;</b> = los botones del vendedor en su app. Si no los toc&oacute;, las horas se cuentan ' +
+       'del primer pedido al &uacute;ltimo. <b>Tiendas</b> = con pedido + visitadas sin venta.</p>';
 
-  /* Detalle: dia por dia */
   for(i=0;i<orden.length;i++){
     if(RVSEL && RVSEL !== orden[i]) continue;
     var v3 = ven[orden[i]], j;
     h += '<h2>' + bEsc(v3.n) + ' &middot; ' + v3.ped + ' pedidos &middot; ' + money(v3.t) + '</h2><div class="rtab"><table>' +
-         '<thead><tr><th>D&iacute;a</th><th>Primer pedido</th><th>&Uacute;ltimo pedido</th><th>Horas</th><th>Tiendas</th>' +
-         '<th>Pedidos</th><th>Vendi&oacute;</th><th>Ruta</th></tr></thead><tbody>';
+         '<thead><tr><th>D&iacute;a</th><th>Empez&oacute;</th><th>Primer pedido</th><th>&Uacute;ltimo pedido</th><th>Termin&oacute;</th>' +
+         '<th>Horas</th><th>Tiendas</th><th>Sin venta</th><th>Pedidos</th><th>Vendi&oacute;</th><th>Ruta</th></tr></thead><tbody>';
     for(j=v3.od.length-1;j>=0;j--){
-      var dd2 = v3.dias[v3.od[j]], rutas = [], r;
+      var dd2 = v3.dias[v3.od[j]], rutas = [], r, sv = 0, z3;
       for(r in dd2.ruta) if(dd2.ruta.hasOwnProperty(r)) rutas.push(r);
-      h += '<tr><td><b>' + dd2.f.getDate() + '/' + (dd2.f.getMonth()+1) + '</b></td><td>' + rHora(dd2.ini) + '</td><td>' +
-           rHora(dd2.fin) + '</td><td>' + (dd2.ped > 1 ? rDur(new Date(dd2.fin) - new Date(dd2.ini)) : '&mdash;') + '</td><td>' +
-           cuenta(dd2.tiendas) + '</td><td>' + dd2.ped + '</td><td><b>' + money(dd2.t) + '</b></td><td>' + bEsc(rutas.join(', ')) + '</td></tr>';
+      for(z3 in dd2.sinv) if(!dd2.tiendas[z3]) sv++;
+      var a1 = dd2.emp || dd2.ini, a2 = dd2.ter || dd2.fin;
+      var hrs = (a1 && a2 && a2 > a1) ? rDur(new Date(a2) - new Date(a1)) : '&mdash;';
+      h += '<tr><td><b>' + dd2.f.getDate() + '/' + (dd2.f.getMonth()+1) + '</b></td><td>' + (dd2.emp ? rHora(dd2.emp) : '&mdash;') +
+           '</td><td>' + (dd2.ini ? rHora(dd2.ini) : '&mdash;') + '</td><td>' + (dd2.fin ? rHora(dd2.fin) : '&mdash;') +
+           '</td><td>' + (dd2.ter ? rHora(dd2.ter) : '&mdash;') + '</td><td>' + hrs + '</td><td>' + visitas(dd2) + '</td><td>' + sv +
+           '</td><td>' + dd2.ped + '</td><td><b>' + money(dd2.t) + '</b></td><td>' + bEsc(rutas.join(', ')) + '</td></tr>';
     }
     h += '</tbody></table></div>';
   }
