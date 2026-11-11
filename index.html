@@ -85,7 +85,19 @@ header{background:#1f2937;color:#fff;padding:10px 12px;position:sticky;top:0;z-i
       box-shadow:0 1px 2px rgba(16,24,40,.07)}
 .cell{display:table-cell;vertical-align:middle}
 .ph{width:68px}
-.ph img{width:60px;height:60px;object-fit:contain;border-radius:6px;background:#f4f5f7;display:block}
+.ph img{width:60px;height:60px;object-fit:contain;border-radius:6px;background:#f4f5f7;display:block;cursor:zoom-in}
+/* Tocar la foto: se ve grande para ensenarsela al cliente (Manuel, 11/nov) */
+.zoom{display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:300;background:rgba(0,0,0,.82);padding:14px;overflow:auto}
+.zoom.on{display:block}
+.zoom .zc{background:#fff;border-radius:14px;max-width:520px;margin:10px auto;padding:12px;text-align:center;position:relative}
+.zoom .zc img{width:100%;max-height:62vh;object-fit:contain;display:block;border-radius:8px}
+.zoom .zx{position:absolute;top:8px;right:8px;width:40px;height:40px;border-radius:20px;border:0;background:#111;color:#fff;font-size:22px;line-height:40px;padding:0}
+.zoom .zn{font-weight:800;font-size:18px;margin:10px 0 2px}
+.zoom .zp{font-size:20px;font-weight:800;color:#15803d;margin-bottom:10px}
+.zoom .zs{display:flex;justify-content:center;align-items:center;gap:14px}
+.zoom .zs .b{width:54px;height:54px;font-size:28px}
+.zoom .zs .qty{font-size:26px;width:70px}
+.zoom .zs .qin{width:80px;font-size:24px}
 .noimg{width:60px;height:60px;border-radius:6px;background:#eef0f3;display:block;text-align:center;line-height:60px;font-size:24px;font-weight:700;color:#aeb4bc}
 .info{padding:0 8px}
 .name{font-weight:600;line-height:1.25;font-size:14px}
@@ -152,6 +164,7 @@ body.bloq #bent{display:none}
 </style>
 </head>
 <body>
+<div class="zoom" id="zoom"></div>
 
 <header>
   <div class="hd">
@@ -978,7 +991,7 @@ function render(){
     p = out[i];
     var n = cart[p.i] || 0;
     h += '<div class="card' + (n>0?' sel':'') + '" id="c' + p.i + '">';
-    h += '<div class="cell ph">' + (p.f ? '<img src="' + p.f + '" loading="lazy" alt="">' :
+    h += '<div class="cell ph">' + (p.f ? '<img src="' + p.f + '" loading="lazy" alt="" data-z="' + p.i + '">' :
          '<span class="noimg">' + (p.t ? p.t.charAt(0).toUpperCase() : '?') + '</span>') + '</div>';
     h += '<div class="cell info"><div class="name">' + p.t + '</div>';
     h += '<div class="meta">' + p.c + (p.d ? '' : ' &middot; <span class="agot">AGOTADO</span>') + '</div>';
@@ -1005,7 +1018,26 @@ function render(){
   document.getElementById('grid').innerHTML = h;
 }
 /* Repinta SOLO el renglon tocado. Redibujar los 551 se come los toques en telefonos viejos. */
+var ZOOM = null;
+function pintaZoom(){
+  var z = document.getElementById('zoom');
+  if(!z) return;
+  if(!ZOOM){ z.className = 'zoom'; z.innerHTML = ''; return; }
+  var p = byId(ZOOM);
+  if(!p){ ZOOM = null; z.className = 'zoom'; return; }
+  var n = cart[ZOOM] || 0, pre = precioDe(p);
+  z.innerHTML = '<div class="zc"><button class="zx" data-zx="1" aria-label="Cerrar">&times;</button>' +
+    '<img src="' + p.f + '" alt="">' +
+    '<div class="zn">' + p.t + '</div>' +
+    '<div class="zp">' + (pre > 0 ? money(pre) : 'Precio por confirmar') + '</div>' +
+    '<div class="zs">' + (n > 0 ? '<button class="b" data-m="' + ZOOM + '">&minus;</button>' +
+      '<span class="qty" data-q="' + ZOOM + '">' + n + '</span>' : '') +
+    '<button class="b add" data-a="' + ZOOM + '">+</button></div></div>';
+  z.className = 'zoom on';
+}
+function abreZoom(id){ ZOOM = id; pintaZoom(); }
 function paintCard(id){
+  if(ZOOM && String(ZOOM) === String(id)) pintaZoom();
   var el = document.getElementById('c' + id);
   if(!el) return;
   var n = cart[id] || 0, h = '';
@@ -1102,6 +1134,9 @@ document.addEventListener('click', function(e){
       if(tc){ eligeTienda(tc); return; }
       var pe = el.getAttribute('data-pe');
       if(pe){ abreEditor(pe); return; }
+      if(el.getAttribute('data-z')){ abreZoom(el.getAttribute('data-z')); return; }
+      if(el.className === 'zc') return;   /* tocar la tarjeta grande no la cierra */
+      if(el.getAttribute('data-zx') || el.id === 'zoom'){ ZOOM = null; pintaZoom(); return; }
       if(el.getAttribute('data-q')){ escribeCantidad(el); return; }
       var a = el.getAttribute('data-a'), m = el.getAttribute('data-m'), c = el.getAttribute('data-c');
       if(a){ bump(a, 1); if(document.getElementById('sheet').className.indexOf('on')>=0) lines(); return; }
