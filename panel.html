@@ -2669,7 +2669,7 @@ function cargaRepVendedores(){
           '&vendedor=not.is.null&origen=is.null&estado=neq.cancelado&order=creado.asc&limit=5000';
   if(RDIAS) u += '&creado=gte.' + encodeURIComponent(rDesde());
   if(!RPRUEBA) u += '&es_prueba=eq.false';
-  var ue = SB + '/rest/v1/gd_vendedor_eventos?select=vendedor,tipo,tienda,tienda_id,creado&order=creado.asc&limit=5000';
+  var ue = SB + '/rest/v1/gd_vendedor_eventos?select=vendedor,tipo,tienda,tienda_id,creado,lat,lng,precision_m&order=creado.asc&limit=20000';
   if(RDIAS) ue += '&creado=gte.' + encodeURIComponent(rDesde());
   req('GET', u, null, true,
     function(d){
@@ -2709,6 +2709,7 @@ function pintaRepVendedores(){
   }
   for(i=0;i<RVEV.length;i++){
     var e = RVEV[i], q2 = diaDe(e);
+    if(e.lat != null && e.lng != null) q2.d.gps = (q2.d.gps || 0) + 1;
     if(e.tipo === 'empieza' && !q2.d.emp) q2.d.emp = e.creado;
     if(e.tipo === 'termina') q2.d.ter = e.creado;
     if(e.tipo === 'visita'){
@@ -2746,7 +2747,7 @@ function pintaRepVendedores(){
     var v3 = ven[orden[i]], j;
     h += '<h2>' + bEsc(v3.n) + ' &middot; ' + v3.ped + ' pedidos &middot; ' + money(v3.t) + '</h2><div class="rtab"><table>' +
          '<thead><tr><th>D&iacute;a</th><th>Empez&oacute;</th><th>Primer pedido</th><th>&Uacute;ltimo pedido</th><th>Termin&oacute;</th>' +
-         '<th>Horas</th><th>Tiendas</th><th>Sin venta</th><th>Pedidos</th><th>Vendi&oacute;</th><th>Ruta</th></tr></thead><tbody>';
+         '<th>Horas</th><th>Tiendas</th><th>Sin venta</th><th>Pedidos</th><th>Vendi&oacute;</th><th>Ruta</th><th>Mapa</th></tr></thead><tbody>';
     for(j=v3.od.length-1;j>=0;j--){
       var dd2 = v3.dias[v3.od[j]], rutas = [], r, sv = 0, z3;
       for(r in dd2.ruta) if(dd2.ruta.hasOwnProperty(r)) rutas.push(r);
@@ -2758,11 +2759,70 @@ function pintaRepVendedores(){
       h += '<tr><td><b>' + dd2.f.getDate() + '/' + (dd2.f.getMonth()+1) + '</b></td><td>' + (dd2.emp ? rHora(dd2.emp) : '&mdash;') +
            '</td><td>' + (dd2.ini ? rHora(dd2.ini) : '&mdash;') + '</td><td>' + (dd2.fin ? rHora(dd2.fin) : '&mdash;') +
            '</td><td>' + (dd2.ter ? rHora(dd2.ter) : '&mdash;') + '</td><td>' + hrs + '</td><td>' + visitas(dd2) + '</td><td>' + sv +
-           '</td><td>' + dd2.ped + '</td><td><b>' + money(dd2.t) + '</b></td><td>' + bEsc(rutas.join(', ')) + '</td></tr>';
+           '</td><td>' + dd2.ped + '</td><td><b>' + money(dd2.t) + '</b></td><td>' + bEsc(rutas.join(', ')) + '</td><td>' +
+           (dd2.gps ? '<button class="mini" data-rmapa="' + bEsc(orden[i] + '|' + v3.od[j]) + '">&#128506; Mapa (' + dd2.gps + ')</button>' : '<span style="color:#9ca3af">sin GPS</span>') +
+           '</td></tr>';
     }
     h += '</tbody></table></div>';
   }
   $('reportes').innerHTML = h;
+}
+
+/* ---- Mapa del dia de un vendedor (Manuel, 11/nov/2026) ----
+   Los puntos con GPS de ese dia, en orden de hora, unidos con una linea.
+   Verde = empezo, azul = pedido, naranja = visita sin venta, rojo = termino,
+   gris = ubicacion cada 5 minutos con la app abierta. Mapa de OpenStreetMap. */
+function rMapaLib(listo){
+  if(window.L){ listo(); return; }
+  var css = document.createElement('link'); css.rel = 'stylesheet';
+  css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'; document.head.appendChild(css);
+  var sc = document.createElement('script'); sc.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+  sc.onload = listo; sc.onerror = function(){ alert('No se pudo cargar el mapa. Revisa el internet.'); };
+  document.head.appendChild(sc);
+}
+function rMapa(clave){
+  var par = clave.split('|'), quien = par[0], dia = par[1], i, pts = [];
+  for(i=0;i<RVEV.length;i++){
+    var e = RVEV[i], d = new Date(e.creado);
+    var dk = d.getFullYear() + '-' + (d.getMonth()+1 < 10 ? '0' : '') + (d.getMonth()+1) + '-' + (d.getDate() < 10 ? '0' : '') + d.getDate();
+    if(rLlave(e.vendedor) === quien && dk === dia && e.lat != null && e.lng != null) pts.push(e);
+  }
+  var cap = document.getElementById('rMapaCap');
+  if(!cap){
+    cap = document.createElement('div'); cap.id = 'rMapaCap';
+    cap.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:500;background:rgba(0,0,0,.6);padding:12px';
+    cap.innerHTML = '<div style="background:#fff;border-radius:12px;height:100%;display:flex;flex-direction:column;overflow:hidden">' +
+      '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid #e5e7eb">' +
+      '<b id="rMapaTit" style="flex:1"></b><button id="rMapaX" class="mini">Cerrar</button></div>' +
+      '<div id="rMapaLey" style="font-size:12px;padding:4px 12px;color:#374151"></div>' +
+      '<div id="rMapaMapa" style="flex:1"></div></div>';
+    document.body.appendChild(cap);
+    document.getElementById('rMapaX').onclick = function(){ cap.style.display = 'none'; };
+  }
+  cap.style.display = 'block';
+  var nom = (pts[0] && pts[0].vendedor) || quien;
+  document.getElementById('rMapaTit').innerHTML = bEsc(nom) + ' &middot; ' + dia.split('-').reverse().join('/') + ' &middot; ' + pts.length + ' puntos';
+  document.getElementById('rMapaLey').innerHTML =
+    '<span style="color:#16a34a">&#9679;</span> empez&oacute; &nbsp; <span style="color:#2563eb">&#9679;</span> pedido &nbsp; ' +
+    '<span style="color:#ea580c">&#9679;</span> visita sin venta &nbsp; <span style="color:#dc2626">&#9679;</span> termin&oacute; &nbsp; ' +
+    '<span style="color:#9ca3af">&#9679;</span> cada 5 min (app abierta)';
+  rMapaLib(function(){
+    if(window.__rMapa){ window.__rMapa.remove(); }
+    var m = window.__rMapa = L.map('rMapaMapa');
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '&copy; OpenStreetMap'}).addTo(m);
+    var col = {empieza: '#16a34a', pedido: '#2563eb', visita: '#ea580c', termina: '#dc2626', ping: '#9ca3af'};
+    var nomT = {empieza: 'Empez&oacute; su d&iacute;a', pedido: 'Pedido', visita: 'Visita sin venta', termina: 'Termin&oacute; su d&iacute;a', ping: 'Ubicaci&oacute;n'};
+    var linea = [], j;
+    for(j=0;j<pts.length;j++){
+      var e2 = pts[j], ll = [e2.lat, e2.lng]; linea.push(ll);
+      L.circleMarker(ll, {radius: e2.tipo === 'ping' ? 4 : 8, color: '#fff', weight: 2, fillColor: col[e2.tipo] || '#111', fillOpacity: .95})
+        .addTo(m).bindPopup('<b>' + rHora(e2.creado) + '</b> &middot; ' + (nomT[e2.tipo] || e2.tipo) +
+          (e2.tienda ? '<br>' + bEsc(e2.tienda) : '') + (e2.precision_m ? '<br><small>&plusmn;' + e2.precision_m + ' m</small>' : ''));
+    }
+    if(linea.length > 1) L.polyline(linea, {color: '#6366f1', weight: 3, opacity: .6}).addTo(m);
+    if(linea.length) m.fitBounds(L.latLngBounds(linea).pad(0.2), {maxZoom: 16}); else m.setView([40.76, -111.89], 9);
+    setTimeout(function(){ m.invalidateSize(); }, 200);
+  });
 }
 
 function pintaReportes(){
@@ -2963,6 +3023,8 @@ document.addEventListener('click', function(e){
       if(rd !== null && rd !== undefined && el.className.indexOf('chip') >= 0){ RDIAS = parseInt(rd, 10); cargaReportes(); return; }
       var rt = el.getAttribute('data-rt');
       if(rt && el.className.indexOf('chip') >= 0){ RTIPO = rt; RVSEL = ''; cargaReportes(); return; }
+      var rmp = el.getAttribute('data-rmapa');
+      if(rmp){ rMapa(rmp); return; }
       var rvs = el.getAttribute('data-rvsel');
       if(rvs !== null && rvs !== undefined){ RVSEL = (RVSEL === rvs) ? '' : rvs; pintaRepVendedores(); return; }
       if(el.getAttribute('data-rp') && el.className.indexOf('chip') >= 0){ RPRUEBA = !RPRUEBA; cargaReportes(); return; }

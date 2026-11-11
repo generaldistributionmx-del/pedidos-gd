@@ -1343,3 +1343,19 @@ create policy gd_vend_ev_pone on public.gd_vendedor_eventos for insert to authen
 drop policy if exists gd_vend_ev_lee on public.gd_vendedor_eventos;
 create policy gd_vend_ev_lee on public.gd_vendedor_eventos for select to authenticated
   using (usuario_id = auth.uid() or public.gd_es_oficina());
+
+-- ============================================================
+--  GPS DEL VENDEDOR (Manuel, 11/nov/2026)
+--  Cada movimiento guarda donde estaba el telefono: empezar, visita sin venta,
+--  pedido, terminar, y un "ping" cada 5 minutos mientras la app esta abierta.
+--  Solo con la app abierta: un navegador no deja leer la ubicacion en segundo plano.
+--  El vendedor tiene que dar permiso de ubicacion en su telefono.
+-- ============================================================
+alter table public.gd_vendedor_eventos add column if not exists lat double precision;
+alter table public.gd_vendedor_eventos add column if not exists lng double precision;
+alter table public.gd_vendedor_eventos add column if not exists precision_m real;
+alter table public.gd_vendedor_eventos add column if not exists pedido_id uuid;
+alter table public.gd_vendedor_eventos drop constraint if exists gd_vendedor_eventos_tipo_check;
+alter table public.gd_vendedor_eventos add constraint gd_vendedor_eventos_tipo_check
+  check (tipo in ('empieza','visita','termina','pedido','ping'));
+create index if not exists gd_vend_ev_usuario_idx on public.gd_vendedor_eventos (usuario_id, creado);

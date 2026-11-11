@@ -324,6 +324,9 @@ function guardarPedido(){
              origen:(MODO_CLIENTE ? 'cliente' : null)};
   var q = cola(); q.push(ped); ponCola(q);
   pintaPend(); vaciarCola();
+  if(esModoVendedor() && soyDelEquipo())
+    guardaEvento({vendedor: miNombreVend(), tipo: 'pedido', pedido_id: pid,
+                  tienda: ped.tienda || null, tienda_id: TIENDA_ID || null});
 }
 
 /* Los avisos van DENTRO de la app: alert() y confirm() pueden estar bloqueados. */
@@ -460,6 +463,50 @@ function traeDia(){
     try { x.send(null); } catch(e){ pintaDia(); }
   });
 }
+/* ---- GPS del vendedor (Manuel, 11/nov/2026) ----
+   Cada movimiento guarda donde estaba el telefono. Si no da permiso o no hay
+   senal, el movimiento se guarda igual, sin ubicacion. Solo con la app abierta. */
+function dameGps(listo){
+  if(!navigator.geolocation){ listo(null); return; }
+  var hecho = false;
+  var fin = function(v){ if(!hecho){ hecho = true; listo(v); } };
+  setTimeout(function(){ fin(null); }, 12000);
+  try {
+    navigator.geolocation.getCurrentPosition(
+      function(pos){ fin({lat: pos.coords.latitude, lng: pos.coords.longitude, precision_m: Math.round(pos.coords.accuracy || 0)}); },
+      function(){ fin(null); },
+      {enableHighAccuracy: true, timeout: 10000, maximumAge: 60000});
+  } catch(e){ fin(null); }
+}
+function guardaEvento(cuerpo, ok, falla){
+  dameGps(function(g){
+    if(g){ cuerpo.lat = g.lat; cuerpo.lng = g.lng; cuerpo.precision_m = g.precision_m; }
+    sesionAlDia(function(){
+      var x = new XMLHttpRequest();
+      x.open('POST', SB_URL + '/gd_vendedor_eventos', true);
+      x.setRequestHeader('apikey', SB_KEY);
+      x.setRequestHeader('Authorization', 'Bearer ' + tokenDelEquipo());
+      x.setRequestHeader('Content-Type', 'application/json');
+      x.setRequestHeader('Prefer', 'return=minimal');
+      x.onreadystatechange = function(){
+        if(x.readyState !== 4) return;
+        if(x.status >= 200 && x.status < 300){ if(ok) ok(g); } else if(falla) falla();
+      };
+      try { x.send(JSON.stringify(cuerpo)); } catch(e){ if(falla) falla(); }
+    });
+  });
+}
+function miNombreVend(){
+  var nom = ''; try { nom = localStorage.getItem('gdp_nom') || ''; } catch(e){}
+  return nom || vrVal('vendedor') || 'Sin nombre';
+}
+/* Mientras el dia esta empezado y la app abierta: un punto cada 5 minutos. */
+setInterval(function(){
+  if(!esModoVendedor() || !soyDelEquipo() || !DIA.empieza || DIA.termina) return;
+  if(document.visibilityState && document.visibilityState !== 'visible') return;
+  guardaEvento({vendedor: miNombreVend(), tipo: 'ping'});
+}, 5 * 60 * 1000);
+
 function marcaDia(tipo){
   var tienda = (document.getElementById('tienda').value || '').replace(/^\s+|\s+$/g, '');
   if(tipo === 'visita' && !tienda){
@@ -469,30 +516,20 @@ function marcaDia(tipo){
   /* confirm() puede estar bloqueado en la app: se confirma tocando dos veces. */
   if(tipo === 'termina' && !DIA.confirma){ DIA.confirma = true; pintaDia(); return; }
   DIA.confirma = false;
-  var nom = ''; try { nom = localStorage.getItem('gdp_nom') || ''; } catch(e){}
-  var cuerpo = {vendedor: nom || vrVal('vendedor') || 'Sin nombre', tipo: tipo};
+  var cuerpo = {vendedor: miNombreVend(), tipo: tipo};
   if(tipo === 'visita'){ cuerpo.tienda = tienda; if(TIENDA_ID) cuerpo.tienda_id = TIENDA_ID; }
   pintaDia('Guardando&hellip;');
-  sesionAlDia(function(){
-    var x = new XMLHttpRequest();
-    x.open('POST', SB_URL + '/gd_vendedor_eventos', true);
-    x.setRequestHeader('apikey', SB_KEY);
-    x.setRequestHeader('Authorization', 'Bearer ' + tokenDelEquipo());
-    x.setRequestHeader('Content-Type', 'application/json');
-    x.setRequestHeader('Prefer', 'return=minimal');
-    x.onreadystatechange = function(){
-      if(x.readyState !== 4) return;
-      if(x.status >= 200 && x.status < 300){
-        var ahora = new Date().toISOString();
-        if(tipo === 'empieza') DIA.empieza = ahora;
-        if(tipo === 'termina') DIA.termina = ahora;
-        if(tipo === 'visita') DIA.visitas++;
-        pintaDia(tipo === 'visita' ? '&#10003; Visita a ' + tienda.replace(/</g,'&lt;') + ' guardada.' : null);
-        if(tipo === 'visita') setTimeout(function(){ pintaDia(); }, 3000);
-      } else { pintaDia('No se guard&oacute;. Revisa el internet y vuelve a tocar.'); }
-    };
-    try { x.send(JSON.stringify(cuerpo)); } catch(e){ pintaDia('No se guard&oacute;.'); }
-  });
+  guardaEvento(cuerpo,
+    function(g){
+      var ahora = new Date().toISOString();
+      if(tipo === 'empieza') DIA.empieza = ahora;
+      if(tipo === 'termina') DIA.termina = ahora;
+      if(tipo === 'visita') DIA.visitas++;
+      var sinGps = g ? '' : ' <span style="color:#fca5a5">(sin ubicaci&oacute;n: activa el GPS y da permiso)</span>';
+      pintaDia(tipo === 'visita' ? '&#10003; Visita a ' + tienda.replace(/</g,'&lt;') + ' guardada.' + sinGps : (sinGps ? 'Guardado' + sinGps : null));
+      if(tipo === 'visita' || sinGps) setTimeout(function(){ pintaDia(); }, 4000);
+    },
+    function(){ pintaDia('No se guard&oacute;. Revisa el internet y vuelve a tocar.'); });
 }
 
 function ponVendedor(){
