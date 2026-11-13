@@ -641,23 +641,33 @@ async function planInvoice(token: string, realm: string, pedidoId: string) {
 // QuickBooks de Manuel usa numeros propios de invoice (8850...): si no se
 // manda DocNumber, el invoice queda SIN numero. Se toma el mas alto de los
 // ultimos y se le suma uno. (Paso con el primer invoice, 26/oct/2026.)
+// 13/nov/2026: los Credit Memo y Sales Receipt comparten la misma serie de
+// numeros que los invoices. Un Credit Memo tomo el 9099 y el invoice del
+// folio 85 choco ("Duplicate Document Number"). Ahora se mira lo mas alto de
+// los tres tipos, y si aun asi choca se prueba con el siguiente.
 async function siguienteNumero(token: string, realm: string) {
-  const q = "select DocNumber from Invoice orderby MetaData.CreateTime desc maxresults 200";
-  const r = await fetch(`${API_BASE}/v3/company/${realm}/query?query=${encodeURIComponent(q)}&minorversion=75`,
-    { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
-  const t = await r.text();
-  if (!r.ok) throw new Error(`QuickBooks respondio ${r.status} al pedir los numeros de invoice: ${t.slice(0, 300)}`);
   let max = 0;
-  for (const inv of JSON.parse(t)?.QueryResponse?.Invoice ?? []) {
-    const n = Number(String(inv.DocNumber ?? "").trim());
-    if (Number.isInteger(n) && n > max && n < 10_000_000) max = n;
+  for (const tipo of ["Invoice", "CreditMemo", "SalesReceipt"]) {
+    const q = `select DocNumber from ${tipo} orderby MetaData.CreateTime desc maxresults 200`;
+    const r = await fetch(`${API_BASE}/v3/company/${realm}/query?query=${encodeURIComponent(q)}&minorversion=75`,
+      { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+    const t = await r.text();
+    if (!r.ok) {
+      if (tipo === "Invoice") throw new Error(`QuickBooks respondio ${r.status} al pedir los numeros de invoice: ${t.slice(0, 300)}`);
+      continue;
+    }
+    for (const doc of JSON.parse(t)?.QueryResponse?.[tipo] ?? []) {
+      const n = Number(String(doc.DocNumber ?? "").trim());
+      if (Number.isInteger(n) && n > max && n < 10_000_000) max = n;
+    }
   }
   return max ? String(max + 1) : null;
 }
 
 async function creaInvoice(token: string, realm: string, plan: Awaited<ReturnType<typeof planInvoice>>) {
   const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Denver" });
-  const numero = await siguienteNumero(token, realm);
+  let numero = await siguienteNumero(token, realm);
+  for (let intento = 0; ; intento++) {
   const cuerpo = {
     CustomerRef: { value: plan.clienteId },
     TxnDate: hoy,
@@ -678,8 +688,13 @@ async function creaInvoice(token: string, realm: string, plan: Awaited<ReturnTyp
     body: JSON.stringify(cuerpo),
   });
   const t = await r.text();
+  if (!r.ok && numero && intento < 10 && /Duplicate Document Number|"code":"6140"/.test(t)) {
+    numero = String(Number(numero) + 1);
+    continue;
+  }
   if (!r.ok) throw new Error(`QuickBooks no acepto el invoice (${r.status}): ${t.slice(0, 400)}`);
   return JSON.parse(t)?.Invoice;
+  }
 }
 
 // ---------- las funciones de la base, con la sesion de quien llamo ----------
