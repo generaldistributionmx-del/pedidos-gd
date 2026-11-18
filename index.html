@@ -1409,10 +1409,31 @@ document.getElementById('wa').onclick = function(){
     document.getElementById('nuevo').style.display = 'block';
     return;
   }
-  aviso('&#10003; <b>Pedido guardado.</b> Ahora se abre WhatsApp: ah\u00ed dale <b>enviar</b>.');
-  document.getElementById('nuevo').style.display = 'block';
   window.open('https://wa.me/' + WHATSAPP + '?text=' + encodeURIComponent(texto()), '_blank');
+  /* Manuel 18/nov/2026: la nota ("poner 10 de cada cosa") se quedaba y salia
+     en el siguiente pedido porque nadie tocaba "Nuevo pedido". Ya guardado y
+     con el WhatsApp abierto, se limpia TODO solo: productos, nota y tienda. */
+  limpiaParaOtroCliente();
+  aviso('&#10003; <b>Pedido guardado.</b> Se abri&oacute; WhatsApp: ah&iacute; dale <b>enviar</b>.<br>' +
+        'La app ya qued&oacute; <b>limpia para el siguiente cliente</b>.');
 };
+function limpiaParaOtroCliente(){
+  cart = {};
+  document.getElementById('nota').value = '';
+  if(TIENDA_ID){
+    TIENDA_ID = null; CODIGO_TIENDA = ''; PRECIOS_TIENDA = {};
+    var el = document.getElementById('tienda');
+    el.readOnly = false; el.className = 'tienda';
+    var m = document.getElementById('dsd'); if(m) m.style.display = 'none';
+    pintaQuienSoy();
+  }
+  document.getElementById('tienda').value = '';
+  try { localStorage.removeItem('gd_tienda_id'); localStorage.removeItem('gd_tienda_cod'); } catch(e){}
+  save(); paintBar(); render();
+  document.getElementById('nuevo').style.display = 'none';
+  document.getElementById('sheet').className = 'sheet';
+  window.scrollTo(0, 0);
+}
 document.getElementById('nuevo').onclick = function(){
   if(MODO_CLIENTE){ YA_ENVIADO = false; document.getElementById('wa').innerHTML = 'Enviar mi pedido'; }
   cart = {}; save(); paintBar(); render();
@@ -1434,7 +1455,7 @@ document.getElementById('cp').onclick = function(){
 };
 document.getElementById('cl').onclick = function(){
   if(confirm('\u00bfVaciar el pedido? No se puede deshacer.')){
-    cart = {}; save(); paintBar(); lines(); render();
+    cart = {}; document.getElementById('nota').value = ''; save(); paintBar(); lines(); render();
     document.getElementById('sheet').className = 'sheet';
   }
 };
