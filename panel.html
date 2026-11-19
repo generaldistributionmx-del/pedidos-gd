@@ -1711,6 +1711,7 @@ function bFoto(id, nombre){
 
 function cargaBodega(){
   BPED = null; BINV = null;
+  bRutasCarga();
   $('bodega').innerHTML = '<div class="cargando">Cargando&hellip;</div>';
   var sel = 'select=id,folio,tienda,tienda_id,articulos,total,creado,estado,es_prueba,origen,picking_por,qb_invoice_id,qb_invoice_num,' +
             'gd_pedido_lineas(cantidad,surtido,quitado)';
@@ -1843,6 +1844,11 @@ function pintaPicking(msg, clase){
        '<div><span>Ya surtido</span><b>' + money(cu.surtido) + '</b></div></div>';
 
   if(p.nota) h += '<div class="card" style="padding:10px 12px"><b>Nota:</b> ' + bEsc(p.nota) + '</div>';
+  if(!p.qb_invoice_id && BRUTAS){
+    h += '<div style="display:flex;align-items:center;gap:8px;margin:0 0 8px"><b style="font-size:14px">Ruta</b>' +
+         '<select id="bRutaP" style="flex:1;padding:9px;font-size:15px;border:1px solid ' + (p.ruta ? '#d5d9df' : '#f59e0b') + ';border-radius:8px">' +
+         bRutasOpc(p.ruta) + '</select></div>';
+  }
   h += bCajaTienda();
 
   if(!terminada){
@@ -2331,10 +2337,55 @@ function bCancela(){
       bAviso('No se pudo cancelar.', 'mal');
     });
 }
+/* Rutas de QuickBooks (Helen, 19/nov/2026): la lista de valores que ya se usan
+   en el campo "Ruta" de los invoices (gd_qb_valores, sin las de la app).
+   Se juntan las que solo cambian en mayusculas y salen por mas usadas. */
+var BRUTAS = null;
+document.addEventListener('change', function(e){
+  var t = e.target || e.srcElement;
+  if(t && t.id === 'bRutaP' && BPED) bPonRuta(t.value);
+  if(t && t.id === 'bRutaN') t.style.borderColor = '#d5d9df';
+});
+function bRutasCarga(listo){
+  if(BRUTAS){ if(listo) listo(); return; }
+  req('GET', SB + '/rest/v1/gd_qb_valores?select=valor,veces,campo_id&rol=eq.ruta&campo_id=neq.manual&order=veces.desc&limit=200', null, true,
+    function(d){
+      var ya = {}, out = [], i;
+      for(i=0;i<(d || []).length;i++){
+        var v = String(d[i].valor).replace(/^\s+|\s+$/g, ''), k = v.toLowerCase();
+        if(!v || ya[k]) continue;
+        ya[k] = 1; out.push(v);
+      }
+      BRUTAS = out;
+      if(listo) listo();
+    },
+    function(st){ if(st === 401){ refresca(function(){ bRutasCarga(listo); }, salir); return; } BRUTAS = []; if(listo) listo(); });
+}
+function bRutasOpc(actual){
+  var h = '<option value="">' + (actual ? 'Sin ruta' : 'Escoge la ruta&hellip;') + '</option>', i, hay = false;
+  for(i=0;i<(BRUTAS || []).length;i++){
+    var si = actual && BRUTAS[i].toLowerCase() === String(actual).toLowerCase();
+    if(si) hay = true;
+    h += '<option value="' + bEsc(BRUTAS[i]) + '"' + (si ? ' selected' : '') + '>' + bEsc(BRUTAS[i]) + '</option>';
+  }
+  if(actual && !hay) h += '<option value="' + bEsc(actual) + '" selected>' + bEsc(actual) + '</option>';
+  return h;
+}
+function bPonRuta(v){
+  var p = BPED;
+  req('PATCH', SB + '/rest/v1/gd_pedidos?id=eq.' + p.id, {ruta: v || null}, true,
+    function(){ p.ruta = v || null; BINV = null; pintaPicking('&#10003; Ruta: <b>' + bEsc(v || 'sin ruta') + '</b>.', 'ok'); },
+    function(st){ if(st === 401){ refresca(function(){ bPonRuta(v); }, salir); return; } bAviso('No se guard&oacute; la ruta.', 'mal'); });
+}
 function bNuevoPinta(){
   BPED = null;
+  if(!BRUTAS){ bRutasCarga(bNuevoPinta); return; }
   var h = '<div class="bhead"><button class="bvolver" data-bvolver="1">&larr; Pedidos</button>' +
           '<div style="font-weight:800;font-size:17px">Pedido nuevo en bodega</div></div>';
+  h += '<div class="card" style="padding:10px 12px"><b>&iquest;Qu&eacute; ruta?</b>' +
+       '<div class="ayuda" style="margin:3px 0 7px">Las rutas de QuickBooks. Va en el invoice.</div>' +
+       '<select id="bRutaN" style="width:100%;padding:11px;font-size:16px;border:1px solid #d5d9df;border-radius:8px">' +
+       bRutasOpc('') + '</select></div>';
   h += '<div class="card" style="padding:10px 12px"><b>&iquest;Para qu&eacute; cliente?</b>' +
        '<div class="ayuda" style="margin:3px 0 7px">B&uacute;scalo como est&aacute; en QuickBooks; ' +
        'con ese nombre sale el invoice y con sus precios.</div>' +
@@ -2346,18 +2397,25 @@ function bNuevoPinta(){
   $('bTq').onkeydown = function(ev){ if(ev.keyCode === 13 && ev.preventDefault) ev.preventDefault(); };
   $('bTq').focus();
 }
-function bCreaPedido(tid, nombre){
+function bCreaPedido(tid, nombre, ruta){
   if(BCREA) return;
+  if(ruta === undefined) ruta = $('bRutaN') ? $('bRutaN').value : '';
+  if(!ruta){
+    bSonido(false);
+    if($('bRutaN')){ $('bRutaN').style.borderColor = '#dc2626'; $('bRutaN').focus(); }
+    alert('Primero escoge la ruta.');
+    return;
+  }
   BCREA = true;
   var id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() :
     'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(ch){
       var r = Math.random() * 16 | 0; return (ch === 'x' ? r : (r & 3 | 8)).toString(16); });
   $('bodega').innerHTML = '<div class="cargando">Creando el pedido&hellip;</div>';
-  req('POST', SB + '/rest/v1/gd_pedidos', {id: id, tienda: nombre, tienda_id: tid, origen: 'bodega'}, true,
+  req('POST', SB + '/rest/v1/gd_pedidos', {id: id, tienda: nombre, tienda_id: tid, origen: 'bodega', ruta: ruta}, true,
     function(){ BCREA = false; abreBodega(id); },
     function(st){
       BCREA = false;
-      if(st === 401){ refresca(function(){ bCreaPedido(tid, nombre); }, salir); return; }
+      if(st === 401){ refresca(function(){ bCreaPedido(tid, nombre, ruta); }, salir); return; }
       $('bodega').innerHTML = '<div class="vacio">No se pudo crear el pedido. Revisa el internet.</div>';
     });
 }
