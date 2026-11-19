@@ -1849,7 +1849,20 @@ function pintaPicking(msg, clase){
     h += '<input id="bNom" placeholder="Tu nombre (quien surte)" autocomplete="off" value="' + bEsc(nom) + '" ' +
          'style="width:100%;padding:12px;font-size:16px;border:1px solid #d5d9df;border-radius:8px">';
     var lp = p.origen === 'bodega' && BPIDE ? bLinea(BPIDE) : null;
-    if(lp){
+    /* Picking de pedido de vendedor, escogido por nombre (Manuel, 19/nov):
+       se pregunta cuantas agarro, de una vez. Sugiere lo que falta. */
+    var lps = p.origen !== 'bodega' && BPIDE ? bLinea(BPIDE) : null;
+    if(lps){
+      var falta = Math.max(0, lps.cantidad - (lps.surtido || 0));
+      h += '<div class="card" style="margin:8px 0 0;padding:10px 12px;background:#ecfdf5;border:2px solid #16a34a">' +
+           '<b>&iquest;Cu&aacute;ntas agarraste de ' + bEsc(lps.producto) + '?</b>' +
+           '<div class="ayuda" style="margin-top:2px">Pide <b>' + lps.cantidad + '</b> &middot; llevas <b>' + (lps.surtido || 0) +
+           '</b> &middot; faltan <b>' + falta + '</b></div>' +
+           '<div class="bsrow" style="margin-top:6px"><input id="bQty" type="number" min="1" max="' + falta + '" inputmode="numeric" value="' + falta + '" ' +
+           'style="flex:1;padding:12px;font-size:22px;font-weight:800;border:1px solid #16a34a;border-radius:8px">' +
+           '<button class="bmano" data-bqty="1" style="padding:12px 18px;font-size:16px">OK</button>' +
+           '<button class="bmano" data-bqtyno="1" style="padding:12px 14px;font-size:15px">Cancelar</button></div></div>';
+    } else if(lp){
       h += '<div class="card" style="margin:8px 0 0;padding:10px 12px;background:#ecfdf5;border:2px solid #16a34a">' +
            '<b>&iquest;Cu&aacute;ntas de ' + bEsc(lp.producto) + '?</b>' +
            '<div class="bsrow" style="margin-top:6px"><input id="bQty" type="number" min="1" inputmode="numeric" value="' + lp.cantidad + '" ' +
@@ -2017,6 +2030,7 @@ function bAviso(msg, clase){
 function bEscanea(txt){
   var c = bCod(txt);
   if(!c) return;
+  if(BPED && BPED.origen !== 'bodega') BPIDE = '';
   var nom = bNombre();
   if(!nom){ bSonido(false); bAviso('Primero escribe tu nombre arriba.', 'mal'); $('bNom').focus(); return; }
   if(BPED.picking_por !== nom || BPED.estado === 'nuevo'){
@@ -2186,7 +2200,11 @@ function bEligeNombre(id){
       if(ls[i].surtido < ls[i].cantidad){ cual = ls[i]; break; }
       lleno = ls[i];
     }
-    if(cual){ bSuma(cual, 1, false); return; }
+    if(cual){
+      BPIDE = cual.id; bSonido(true);
+      pintaPicking('<b>' + bEsc(cual.producto) + '</b>. Escribe cu&aacute;ntas agarraste y Enter.', 'ok');
+      return;
+    }
     bSonido(false);
     if(lleno){
       bAviso('YA EST&Aacute; COMPLETO: ' + bEsc(lleno.producto) + ' (' + lleno.cantidad + ' de ' +
@@ -2256,6 +2274,15 @@ function bEdGuarda(){
 function bPonCant(valor){
   var l = bLinea(BPIDE), n = parseInt(valor != null ? valor : $('bQty').value, 10);
   if(!l) return;
+  if(BPED.origen !== 'bodega'){
+    /* Picking: lo que escribe se SUMA a lo surtido, sin pasarse de lo que pide la orden. */
+    var falta = l.cantidad - (l.surtido || 0);
+    if(!(n >= 1)){ bAviso('Escribe 1 o m&aacute;s.', 'mal'); return; }
+    if(n > falta){ bSonido(false); bAviso('Solo faltan <b>' + falta + '</b> de ' + bEsc(l.producto) + '. No metas m&aacute;s.', 'mal'); return; }
+    BPIDE = '';
+    bSuma(l, n, true);
+    return;
+  }
   if(!(n >= 1)){ bAviso('Escribe 1 o m&aacute;s. Para quitarlo usa <b>Quitar</b>.', 'mal'); return; }
   var quieto = BQUIETO;
   var surte = function(){
@@ -3065,6 +3092,7 @@ document.addEventListener('click', function(e){
       if(el.getAttribute('data-bvolver')){ BTIENDA = false; cargaBodega(); return; }
       if(el.getAttribute('data-bnuevo')){ bNuevoPinta(); return; }
       if(el.getAttribute('data-bqty')){ bPonCant(); return; }
+      if(el.getAttribute('data-bqtyno')){ BPIDE = ''; pintaPicking('', ''); return; }
       var bas = el.getAttribute('data-basig');
       if(bas){ if(CAM) camCierra(); BASIG = bas !== 'no'; if(!BASIG) BDESC = ''; pintaPicking('', ''); return; }
       var bnp = el.getAttribute('data-bnomp');
