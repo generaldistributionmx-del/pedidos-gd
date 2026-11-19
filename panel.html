@@ -1860,9 +1860,9 @@ function pintaPicking(msg, clase){
       h += '<div class="ayuda" style="margin:8px 0 0">Escanea un producto y te pregunto cu&aacute;ntas.</div>';
     }
     h += '<div class="bsrow"><input id="bScan" class="bscan" placeholder="' +
-         (p.origen === 'bodega' ? 'Escanea o escribe el nombre' : 'Escanea aqu&iacute;') + '" autocomplete="off">' +
+         'Escanea o escribe el nombre" autocomplete="off">' +
          '<button class="bcam" id="bCam" type="button" aria-label="Escanear con la c&aacute;mara">&#128247;</button></div>';
-    if(p.origen === 'bodega') h += '<div id="bSres"></div>';
+    h += '<div id="bSres"></div>';
   }
   h += '<div id="bMsg" class="bmsg ' + (clase || '') + '">' + (msg || '') + '</div>';
   if(BASIG && BDESC && !terminada){
@@ -1952,7 +1952,7 @@ function pintaPicking(msg, clase){
       if(ev.preventDefault) ev.preventDefault();
       var v = $('bScan').value;
       /* Con letras es un nombre: Enter escoge el primero de la lista. */
-      if(BPED.origen === 'bodega' && /[a-z]/i.test(v)){
+      if(/[a-z]/i.test(v)){
         var pri = document.querySelector('#bSres [data-bnomp]');
         if(pri) bEligeNombre(pri.getAttribute('data-bnomp'));
         return;
@@ -2146,18 +2146,26 @@ function bAgrega(prodId, escaneado){
 function bBuscaNombre(){
   var v = $('bScan').value.replace(/^\s+|\s+$/g, '').toLowerCase(), out = [], k;
   if(v.length < 2 || !/[a-z]/.test(v)){ $('bSres').innerHTML = ''; return; }
-  var pal = v.split(/\s+/);
-  for(k in BPROD){
-    if(!BPROD.hasOwnProperty(k) || !BPROD[k].a) continue;
-    var nm = BPROD[k].n.toLowerCase(), j, si = true;
-    for(j=0;j<pal.length;j++) if(nm.indexOf(pal[j]) < 0){ si = false; break; }
-    if(si){ out.push(k); if(out.length >= 8) break; }
+  var pal = v.split(/\s+/), enPed = {}, ls0 = BPED.gd_pedido_lineas || [], q;
+  /* Manuel/Helen 19/nov: en el picking de los pedidos de vendedores tambien.
+     Primero salen los productos que SI vienen en este pedido. */
+  for(q=0;q<ls0.length;q++) if(!ls0[q].quitado) enPed[ls0[q].producto_id] = true;
+  function pega(k){
+    if(!BPROD.hasOwnProperty(k) || (!BPROD[k].a && !enPed[k])) return false;
+    var nm = BPROD[k].n.toLowerCase(), j;
+    for(j=0;j<pal.length;j++) if(nm.indexOf(pal[j]) < 0) return false;
+    return true;
+  }
+  for(k in enPed) if(enPed.hasOwnProperty(k) && BPROD[k] && pega(k)){ out.push(k); if(out.length >= 8) break; }
+  if(out.length < 8) for(k in BPROD){
+    if(enPed[k] || !pega(k)) continue;
+    out.push(k); if(out.length >= 8) break;
   }
   var h = '', i;
   for(i=0;i<out.length;i++){
     var p2 = BPROD[out[i]];
     h += '<div class="bln" style="margin:7px 0 0">' + bFoto(out[i], p2.n) + '<div class="nm"><b>' + bEsc(p2.n) + '</b>' +
-         '<small>' + money(p2.p) + '</small></div>' +
+         '<small>' + money(p2.p) + (BPED.origen !== 'bodega' ? (enPed[out[i]] ? ' &middot; <b style="color:#16a34a">viene en el pedido</b>' : ' &middot; <span style="color:#b91c1c">no viene en el pedido</span>') : '') + '</small></div>' +
          '<button class="bmano" data-bnomp="' + out[i] + '" style="background:#16a34a;color:#fff;border-color:#16a34a">Es este</button></div>';
   }
   $('bSres').innerHTML = h || '<div class="ayuda" style="margin-top:7px">No encontr&eacute; nada con eso.</div>';
@@ -2170,6 +2178,26 @@ function bEligeNombre(id){
     bRpc('gd_bodega_empieza', {p_pedido: BPED.id, p_nombre: bNombre()}, function(){});
   }
   var ls = BPED.gd_pedido_lineas, i;
+  if(BPED.origen !== 'bodega'){
+    /* Picking de un pedido de vendedor: es como si hubiera pitado (+1). */
+    var cual = null, lleno = null;
+    for(i=0;i<ls.length;i++){
+      if(ls[i].quitado || ls[i].producto_id !== id) continue;
+      if(ls[i].surtido < ls[i].cantidad){ cual = ls[i]; break; }
+      lleno = ls[i];
+    }
+    if(cual){ bSuma(cual, 1, false); return; }
+    bSonido(false);
+    if(lleno){
+      bAviso('YA EST&Aacute; COMPLETO: ' + bEsc(lleno.producto) + ' (' + lleno.cantidad + ' de ' +
+             lleno.cantidad + '). No metas m&aacute;s.', 'mal');
+    } else {
+      bAviso('&#10007; NO EST&Aacute; EN ESTE PEDIDO<br>Escogiste: <u>' + bEsc((BPROD[id] || {}).n || '') + '</u>' +
+             '<br><small style="font-weight:400">Rev&iacute;salo y agarra el que dice la orden.</small>', 'mal');
+    }
+    $('bScan').value = ''; $('bSres').innerHTML = '';
+    return;
+  }
   for(i=0;i<ls.length;i++){
     if(!ls[i].quitado && ls[i].producto_id === id){
       BPIDE = ls[i].id; bSonido(true);
