@@ -551,7 +551,7 @@ async function planCampos(token: string, realm: string) {
 async function planInvoice(token: string, realm: string, pedidoId: string) {
   const ped = (await base(
     `gd_pedidos?id=eq.${encodeURIComponent(pedidoId)}&select=id,folio,tienda,tienda_id,estado,es_prueba,` +
-    `picking_por,vendedor,ruta,qb_invoice_id,qb_invoice_num,gd_pedido_lineas(id,producto_id,producto,precio,cantidad,surtido,quitado)`,
+    `picking_por,vendedor,ruta,qb_invoice_id,qb_invoice_num,gd_pedido_lineas(id,producto_id,producto,categoria,precio,cantidad,surtido,quitado)`,
   ))?.[0];
   if (!ped) throw new Error("No encontre ese pedido.");
 
@@ -577,18 +577,41 @@ async function planInvoice(token: string, realm: string, pedidoId: string) {
     if (a.Type === "Category") continue;
     porNombre.set(norm(limpia(a.Name)), a);
   }
-  const lineas = (ped.gd_pedido_lineas ?? [])
-    .filter((l: Record<string, any>) => !l.quitado)
+  // Manuel, 21/nov/2026: el invoice salia revuelto (dulce, bebida, sabritas,
+  // dulce...). Ahora va por departamento, como se entrega: primero todos los
+  // Dulces, luego Snacks (Sabritas), luego Bebidas, y al final lo demas.
+  // Dentro de cada departamento, por nombre.
+  const vivas = (ped.gd_pedido_lineas ?? []).filter((l: Record<string, any>) => !l.quitado);
+  // Solo se busca la categoria de los renglones que no la traen y cuyo
+  // producto_id es un id de gd_productos (uuid); la app vieja guardaba otros ids.
+  const esUuid = (x: unknown) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(x ?? ""));
+  const sinCat = vivas.filter((l: Record<string, any>) => !l.categoria && esUuid(l.producto_id)).map((l: Record<string, any>) => String(l.producto_id));
+  const catDe = new Map<string, string>();
+  if (sinCat.length) {
+    try {
+      const ps = await base(`gd_productos?select=id,categoria&id=in.(${[...new Set(sinCat)].join(",")})`) ?? [];
+      for (const x of ps) catDe.set(String(x.id), String(x.categoria ?? ""));
+    } catch (_e) { /* sin categoria: esos renglones van al final, el invoice sale igual */ }
+  }
+  const ORDEN_DEPTO = ["dulces", "snacks", "bebidas", "helados", "abarrotes", "bulk", "otros"];
+  const lugar = (c: string) => {
+    const i = ORDEN_DEPTO.indexOf(String(c || "").toLowerCase().trim());
+    return i < 0 ? ORDEN_DEPTO.length : i;
+  };
+  const lineas = vivas
     .map((l: Record<string, any>) => {
       const it = porNombre.get(norm(limpia(l.producto)));
       const cant = Number(l.cantidad);
       const precio = Number(l.precio);
       return {
         producto: l.producto, cantidad: cant, precio,
+        categoria: l.categoria || catDe.get(String(l.producto_id)) || "",
         importe: Math.round(cant * precio * 100) / 100,
         surtido: Number(l.surtido), item_id: it ? String(it.Id) : null,
       };
-    });
+    })
+    .sort((a: any, b: any) => (lugar(a.categoria) - lugar(b.categoria)) ||
+                              String(a.producto).localeCompare(String(b.producto), "es", { sensitivity: "base" }));
   const total = Math.round(lineas.reduce((s: number, l: any) => s + l.importe, 0) * 100) / 100;
 
   // Ruta y vendedor van en los campos propios del invoice, como ya los usa Manuel.
