@@ -1512,31 +1512,58 @@ function desde(){
 
 function carga(){
   $('cuerpo').innerHTML = '<div class="cargando">Cargando&hellip;</div>';
-  var u = SB + '/rest/v1/gd_pedidos?select=id,folio,tienda,tienda_id,tienda_cliente,nota,articulos,total,creado,estado,origen,qb_invoice_id,gd_pedido_lineas(producto,categoria,precio,cantidad,importe)'
+  var u = SB + '/rest/v1/gd_pedidos?select=id,folio,tienda,tienda_id,tienda_cliente,nota,articulos,total,creado,estado,origen,ruta,qb_invoice_id,gd_pedido_lineas(producto,categoria,precio,cantidad,importe)'
         + '&gd_pedido_lineas.quitado=eq.false&es_prueba=eq.false&order=creado.desc&limit=300';
   var d = desde();
   if(d) u += '&creado=gte.' + encodeURIComponent(d);
   if(ESTADO) u += '&estado=eq.' + ESTADO;
   req('GET', u, null, true,
-    function(datos){ PEDIDOS = datos || []; pinta(); },
+    function(datos){ PTODOS = datos || []; pFiltraRuta(); pinta(); chips(); },
     function(st){
       if(st === 401){ refresca(carga, salir); return; }
       $('cuerpo').innerHTML = '<div class="vacio">No se pudieron cargar los pedidos.<br>Revisa tu internet y vuelve a entrar.</div>';
     });
 }
 
+/* Filtro por ruta en Pedidos (Helen, 24/nov/2026), igual que en Bodega.
+   La ruta se filtra aqui mismo; el estatus lo pide a la base como antes. */
+var PTODOS = [], PFRUTA = '';
+try { PFRUTA = localStorage.getItem('gd_pfruta') || ''; } catch(e){}
+function pFiltraRuta(){
+  var i, out = [];
+  for(i=0;i<PTODOS.length;i++){
+    var r = PTODOS[i].ruta;
+    if(PFRUTA === '__sin' ? !r : (!PFRUTA || String(r || '').toLowerCase() === PFRUTA.toLowerCase())) out.push(PTODOS[i]);
+  }
+  PEDIDOS = out;
+}
 function chips(){
   var ops = [[1,'Hoy'],[7,'7 d&iacute;as'],[30,'30 d&iacute;as'],[0,'Todo']], h = '', i;
   for(i=0;i<ops.length;i++){
     h += '<button class="chip' + (dias===ops[i][0]?' on':'') + '" data-d="' + ops[i][0] + '">' + ops[i][1] + '</button>';
   }
-  h += '<span style="display:inline-block;width:14px"></span>';
-  h += '<button class="chip' + (ESTADO===''?' on':'') + '" data-e="">Todos</button>';
-  for(i=0;i<PASOS.length;i++){
-    h += '<button class="chip' + (ESTADO===PASOS[i][0]?' on':'') + '" data-e="' + PASOS[i][0] + '">' +
-         PASOS[i][1] + '</button>';
+  var rutas = [], ya = {}, sinRuta = false;
+  for(i=0;i<PTODOS.length;i++){
+    var r0 = PTODOS[i].ruta;
+    if(!r0){ sinRuta = true; continue; }
+    if(!ya[r0.toLowerCase()]){ ya[r0.toLowerCase()] = 1; rutas.push(r0); }
   }
+  rutas.sort(function(a, b){ return a.localeCompare(b); });
+  if(PFRUTA && PFRUTA !== '__sin' && !ya[PFRUTA.toLowerCase()]) rutas.push(PFRUTA);
+  var sty = 'flex:1;min-width:0;padding:9px;font-size:15px;border:1px solid #d5d9df;border-radius:8px;background:#fff';
+  h += '<div style="display:flex;gap:8px;margin-top:8px">' +
+       '<select id="pfRuta" style="' + sty + (PFRUTA ? ';border-color:#2563eb;font-weight:700' : '') + '">' +
+       '<option value="">Todas las rutas</option>';
+  for(i=0;i<rutas.length;i++) h += '<option value="' + bEsc(rutas[i]) + '"' + (rutas[i].toLowerCase() === PFRUTA.toLowerCase() ? ' selected' : '') + '>' + bEsc(rutas[i]) + '</option>';
+  if(sinRuta || PFRUTA === '__sin') h += '<option value="__sin"' + (PFRUTA === '__sin' ? ' selected' : '') + '>Sin ruta</option>';
+  h += '</select><select id="pfEst" style="' + sty + (ESTADO ? ';border-color:#2563eb;font-weight:700' : '') + '">' +
+       '<option value="">Todos los estatus</option>';
+  for(i=0;i<PASOS.length;i++) h += '<option value="' + PASOS[i][0] + '"' + (ESTADO === PASOS[i][0] ? ' selected' : '') + '>' + PASOS[i][1] + '</option>';
+  h += '<option value="cancelado"' + (ESTADO === 'cancelado' ? ' selected' : '') + '>Cancelado</option>';
+  h += '</select></div>';
   $('chips').innerHTML = h;
+  $('pfRuta').onchange = function(){ PFRUTA = this.value; try { localStorage.setItem('gd_pfruta', PFRUTA); } catch(e){} pFiltraRuta(); pinta(); chips(); };
+  $('pfEst').onchange = function(){ ESTADO = this.value; chips(); carga(); };
 }
 
 function fecha(iso){
@@ -1587,7 +1614,8 @@ function pinta(){
     h += '<div class="a"><div class="tienda">' + p.tienda +
          '<span class="est ' + est + '">' + etiqueta(est) + '</span>' +
          (p.origen === 'cliente' ? '<span class="cliente">LO HIZO EL CLIENTE</span>' : '') + '</div>';
-    h += '<div class="meta">Folio ' + p.folio + ' &middot; ' + fecha(p.creado) + '</div></div>';
+    h += '<div class="meta">Folio ' + p.folio + ' &middot; ' + fecha(p.creado) +
+         (p.ruta ? ' &middot; Ruta <b>' + bEsc(p.ruta) + '</b>' : '') + '</div></div>';
     h += '<div class="b"><div class="tot">' + money(p.total) + '</div>';
     h += '<div class="art">' + p.articulos + (p.articulos===1?' art&iacute;culo':' art&iacute;culos') + '</div></div>';
     h += '</div><div class="lineas" id="l' + i + '">';
