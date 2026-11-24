@@ -1713,10 +1713,10 @@ function cargaBodega(){
   BPED = null; BINV = null;
   bRutasCarga();
   $('bodega').innerHTML = '<div class="cargando">Cargando&hellip;</div>';
-  var sel = 'select=id,folio,tienda,tienda_id,articulos,total,creado,estado,es_prueba,origen,picking_por,qb_invoice_id,qb_invoice_num,' +
+  var sel = 'select=id,folio,tienda,tienda_id,articulos,total,creado,estado,es_prueba,origen,picking_por,qb_invoice_id,qb_invoice_num,ruta,' +
             'gd_pedido_lineas(cantidad,surtido,quitado)';
   var hace = new Date(); hace.setDate(hace.getDate() - 7);
-  req('GET', SB + '/rest/v1/gd_pedidos?' + sel + '&estado=in.(nuevo,preparando)&order=creado.asc&limit=200', null, true,
+  req('GET', SB + '/rest/v1/gd_pedidos?' + sel + '&estado=in.(nuevo,preparando)&order=creado.desc&limit=200', null, true,
     function(d){
       BPEDS = d || [];
       req('GET', SB + '/rest/v1/gd_pedidos?' + sel + '&estado=eq.preparado&picking_fin=gte.' +
@@ -1748,6 +1748,7 @@ function bTarjeta(p){
        (p.origen === 'cliente' && !p.tienda_id ? '<span class="prueba">FALTA CLIENTE</span>' : '') +
        (p.origen === 'bodega' ? '<span class="cliente">HECHO EN BODEGA</span>' : '') + '</div>';
   h += '<div class="m">' + tag + ' Folio ' + p.folio + ' &middot; ' + fecha(p.creado) +
+       (p.ruta ? ' &middot; Ruta <b>' + bEsc(p.ruta) + '</b>' : '') +
        (p.picking_por ? ' &middot; <b>' + bEsc(p.picking_por) + '</b>' : '') + '</div>';
   if(p.estado !== 'preparado') h += '<div class="bbar"><i style="width:' + pct + '%"></i></div>';
   h += '</div><div style="text-align:right;flex:none"><b style="font-size:17px">' + money(p.total) + '</b>' +
@@ -1755,21 +1756,62 @@ function bTarjeta(p){
   return h;
 }
 
+/* Filtros de Bodega (Helen, 24/nov/2026): por ruta y por estatus.
+   Se acuerda de lo ultimo que se escogio en esta computadora. */
+var BFRUTA = '', BFEST = '';
+try { BFRUTA = localStorage.getItem('gd_bfruta') || ''; BFEST = localStorage.getItem('gd_bfest') || ''; } catch(e){}
+function bPasaFiltro(p){
+  if(BFEST && p.estado !== BFEST) return false;
+  if(BFRUTA === '__sin') return !p.ruta;
+  if(BFRUTA && String(p.ruta || '').toLowerCase() !== BFRUTA.toLowerCase()) return false;
+  return true;
+}
 function pintaBodega(){
   var h = '<button class="bfin" data-bnuevo="1" style="margin:4px 0 6px">+ HACER UN PEDIDO AQU&Iacute; EN BODEGA</button>' +
           '<p class="ayuda" style="padding:0 3px;margin:0 0 6px">Sin vendedor: escoges el cliente y escaneas lo que se lleva.</p>';
-  var i;
-  h += '<h2>Por surtir</h2>';
-  h += '<p class="ayuda" style="padding:0 3px;margin-top:-2px">Toca un pedido, escribe tu nombre ' +
-       'y escanea <b>cada pieza</b> antes de empacarla. Si no es del pedido, no cuenta.</p>';
-  if(!BPEDS.length) h += '<div class="vacio" style="padding:22px">No hay pedidos por surtir.<br>' +
-                         'Los pedidos nuevos aparecen aqu&iacute; solos.</div>';
-  for(i=0;i<BPEDS.length;i++) h += bTarjeta(BPEDS[i]);
-  if(BLISTOS.length){
+  var i, todos = BPEDS.concat(BLISTOS), rutas = [], ya = {}, sinRuta = 0;
+  for(i=0;i<todos.length;i++){
+    var r0 = todos[i].ruta;
+    if(!r0){ sinRuta++; continue; }
+    if(!ya[r0.toLowerCase()]){ ya[r0.toLowerCase()] = 1; rutas.push(r0); }
+  }
+  rutas.sort(function(a, b){ return a.localeCompare(b); });
+  if(BFRUTA && BFRUTA !== '__sin' && !ya[BFRUTA.toLowerCase()]) rutas.push(BFRUTA);
+  var est = [['', 'Todos los estatus'], ['nuevo', 'Nuevo'], ['preparando', 'Preparando'], ['preparado', 'Preparado (terminado)']];
+  var sty = 'flex:1;min-width:0;padding:10px;font-size:15px;border:1px solid #d5d9df;border-radius:8px;background:#fff';
+  h += '<div style="display:flex;gap:8px;margin:2px 0 6px">' +
+       '<select id="bfRuta" style="' + sty + (BFRUTA ? ';border-color:#2563eb;font-weight:700' : '') + '">' +
+       '<option value="">Todas las rutas</option>';
+  for(i=0;i<rutas.length;i++) h += '<option value="' + bEsc(rutas[i]) + '"' + (rutas[i].toLowerCase() === BFRUTA.toLowerCase() ? ' selected' : '') + '>' + bEsc(rutas[i]) + '</option>';
+  if(sinRuta || BFRUTA === '__sin') h += '<option value="__sin"' + (BFRUTA === '__sin' ? ' selected' : '') + '>Sin ruta</option>';
+  h += '</select><select id="bfEst" style="' + sty + (BFEST ? ';border-color:#2563eb;font-weight:700' : '') + '">';
+  for(i=0;i<est.length;i++) h += '<option value="' + est[i][0] + '"' + (est[i][0] === BFEST ? ' selected' : '') + '>' + est[i][1] + '</option>';
+  h += '</select></div>';
+  var por = [], listos = [];
+  /* Helen 24/nov: todo de la fecha mas nueva a la mas vieja. */
+  var masNuevo = function(a, b){ return String(b.creado || '').localeCompare(String(a.creado || '')); };
+  BPEDS.sort(masNuevo); BLISTOS.sort(masNuevo);
+  for(i=0;i<BPEDS.length;i++) if(bPasaFiltro(BPEDS[i])) por.push(BPEDS[i]);
+  for(i=0;i<BLISTOS.length;i++) if(bPasaFiltro(BLISTOS[i])) listos.push(BLISTOS[i]);
+  var filtrado = BFRUTA || BFEST;
+  if(filtrado) h += '<p class="ayuda" style="padding:0 3px;margin:0 0 4px">Mostrando <b>' + (por.length + listos.length) +
+                    '</b> de ' + todos.length + ' pedidos. <a href="#" data-bfquita="1">Quitar filtros</a></p>';
+  if(BFEST !== 'preparado'){
+    h += '<h2>Por surtir</h2>';
+    h += '<p class="ayuda" style="padding:0 3px;margin-top:-2px">Toca un pedido, escribe tu nombre ' +
+         'y escanea <b>cada pieza</b> antes de empacarla. Si no es del pedido, no cuenta.</p>';
+    if(!por.length) h += '<div class="vacio" style="padding:22px">' + (filtrado ? 'No hay pedidos por surtir con ese filtro.' :
+                         'No hay pedidos por surtir.<br>Los pedidos nuevos aparecen aqu&iacute; solos.') + '</div>';
+    for(i=0;i<por.length;i++) h += bTarjeta(por[i]);
+  }
+  if(listos.length || BFEST === 'preparado'){
     h += '<h2>Terminadas (&uacute;ltimos 7 d&iacute;as)</h2>';
-    for(i=0;i<BLISTOS.length;i++) h += bTarjeta(BLISTOS[i]);
+    if(!listos.length) h += '<div class="vacio" style="padding:22px">No hay terminadas con ese filtro.</div>';
+    for(i=0;i<listos.length;i++) h += bTarjeta(listos[i]);
   }
   $('bodega').innerHTML = h;
+  $('bfRuta').onchange = function(){ BFRUTA = this.value; try { localStorage.setItem('gd_bfruta', BFRUTA); } catch(e){} pintaBodega(); };
+  $('bfEst').onchange = function(){ BFEST = this.value; try { localStorage.setItem('gd_bfest', BFEST); } catch(e){} pintaBodega(); };
 }
 
 function abreBodega(id){
@@ -3149,6 +3191,8 @@ document.addEventListener('click', function(e){
       if(bab){ irBodega(bab); return; }
       if(el.getAttribute('data-bvolver')){ BTIENDA = false; cargaBodega(); return; }
       if(el.getAttribute('data-bnuevo')){ bNuevoPinta(); return; }
+      if(el.getAttribute('data-bfquita')){ if(e.preventDefault) e.preventDefault(); BFRUTA = ''; BFEST = '';
+        try { localStorage.removeItem('gd_bfruta'); localStorage.removeItem('gd_bfest'); } catch(e2){} pintaBodega(); return; }
       if(el.getAttribute('data-bqty')){ bPonCant(); return; }
       if(el.getAttribute('data-bqtyno')){ BPIDE = ''; pintaPicking('', ''); return; }
       var bas = el.getAttribute('data-basig');
