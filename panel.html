@@ -336,6 +336,7 @@ h2{font-size:14px;text-transform:uppercase;letter-spacing:.5px;color:#6b7280;
         <b>aceptaron</b> recibir el link para hacer su pedido. Toca <b>Enviar</b>: se abre
         WhatsApp con el mensaje y su link ya escritos, y nom&aacute;s le das enviar.</p>
       <div id="waFiltros"></div>
+      <div id="waDifu"></div>
       <div id="waLista"><div class="cargando">Cargando&hellip;</div></div>
 
       <h2 id="waTitForm">Agregar un cliente</h2>
@@ -3236,7 +3237,7 @@ function waBonito(d){
 function waMensaje(){ var m = ''; try { m = localStorage.getItem('gd_wamsg') || ''; } catch(e){} return m || WA_MSG0; }
 function waLink(c){
   var cod = c.gd_tiendas && c.gd_tiendas.codigo;
-  return cod ? linkDe(cod) : baseApp() + 'pedir.html';
+  return cod ? baseApp() + '?cliente=1&t=' + encodeURIComponent(cod) : baseApp() + 'pedir.html';
 }
 function waHoy(c){
   if(!c.ultimo_envio) return false;
@@ -3289,6 +3290,7 @@ function pintaWa(){
     porRuta[r].push(c); n++;
   }
   if(!n){
+    $('waDifu').innerHTML = '';
     $('waLista').innerHTML = '<div class="vacio">' + (WA.length ? 'Nadie con ese filtro.' :
       'Todav&iacute;a no hay clientes.<br>Agrega el primero abajo.') + '</div>';
     return;
@@ -3328,6 +3330,7 @@ function pintaWa(){
   }
   $('waLista').innerHTML = h;
   WA_ORDEN = orden; WA_GRUPOS = porRuta;
+  pintaDifu();
 }
 var WA_ORDEN = [], WA_GRUPOS = {};
 
@@ -3344,6 +3347,81 @@ function waEnviar(id){
   req('POST', SB + '/rest/v1/gd_clientes_wa_envios', {cliente_id: c.id, link: link, mensaje: msg}, true, function(){}, function(){});
   req('PATCH', SB + '/rest/v1/gd_clientes_wa?id=eq.' + c.id, {ultimo_envio: ahora}, true, function(){},
     function(){ aviso('mWa', 'Se abri&oacute; WhatsApp pero no se pudo anotar el env&iacute;o.', false); });
+}
+
+
+/* ---- mandar a todos de una vez: lista de difusion (Manuel, 25/nov/2026) ----
+   WhatsApp no deja que una pagina mande sola. Lo que si se puede: una lista de
+   difusion en el telefono de Manuel, con UN mensaje igual para todos y el link
+   general. La app reconoce a cada cliente (ver index.html, "Link unico"). */
+function waFiltrados(){
+  var r = [], i, c;
+  for(i=0;i<WA.length;i++){
+    c = WA[i];
+    if(!c.activo) continue;
+    if(WAFRUTA && (c.ruta || '') !== WAFRUTA) continue;
+    if(WAFDIA && (c.dia || '') !== WAFDIA) continue;
+    r.push(c);
+  }
+  return r;
+}
+function waQueGrupo(){
+  var g = [];
+  if(WAFRUTA) g.push(WAFRUTA);
+  if(WAFDIA) g.push(WAFDIA);
+  return g.length ? g.join(' \u00b7 ') : 'todos';
+}
+function waMsgGeneral(){
+  return waMensaje().replace(/ ?\{quien\}/g, '').replace(/\{tienda\}/g, 'su tienda')
+                    .replace(/\{link\}/g, baseApp() + 'pedir.html');
+}
+function pintaDifu(){
+  var f = waFiltrados(), pend = 0, i;
+  for(i=0;i<f.length;i++) if(!waHoy(f[i])) pend++;
+  if(!f.length){ $('waDifu').innerHTML = ''; return; }
+  $('waDifu').innerHTML = '<div class="card" style="border:1px solid #bbf7d0;background:#f0fdf4">' +
+    '<h3>Mandar a todos de una vez (' + waEsc(waQueGrupo()) + ': ' + f.length + (f.length === 1 ? ' cliente' : ' clientes') + ')</h3>' +
+    '<p class="ayuda" style="margin-bottom:6px">Con una <b>lista de difusi&oacute;n</b> de WhatsApp: escribes una vez y le llega a cada uno por separado. ' +
+    'Solo les llega a los que <b>tienen tu n&uacute;mero guardado</b>. El link es el general: el tel&eacute;fono del cliente ya sabe cu&aacute;l es su tienda ' +
+    '(o le pide su WhatsApp una vez).</p>' +
+    '<p class="ayuda" style="margin-bottom:4px"><b>1.</b> Baja los contactos y gu&aacute;rdalos en tu tel&eacute;fono (solo la primera vez o cuando agregues clientes).<br>' +
+    '<b>2.</b> En WhatsApp: men&uacute; &rarr; <b>Nueva difusi&oacute;n</b> &rarr; escoge los que empiezan con <b>GD' + (WAFRUTA ? ' ' + waEsc(WAFRUTA) : '') + '</b>.<br>' +
+    '<b>3.</b> Copia el mensaje, p&eacute;galo en la lista y m&aacute;ndalo.<br><b>4.</b> Toca <b>Ya lo mand&eacute;</b> para que quede anotado.</p>' +
+    '<button class="mini" onclick="waVcf()">&#128229; Bajar contactos (' + f.length + ')</button>' +
+    '<button class="mini" onclick="waCopiaGeneral()">&#128203; Copiar mensaje</button>' +
+    (pend ? '<button class="mini p" onclick="waMarcaTodos()">&#10003; Ya lo mand&eacute; (' + pend + ')</button>' : '<span class="meta"> &#10003; Todos anotados hoy</span>') +
+    '<div class="lnk" style="white-space:pre-wrap">' + waEsc(waMsgGeneral()) + '</div>' +
+    '</div>';
+}
+function waVcf(){
+  var f = waFiltrados(), s = '', i, c, nom;
+  for(i=0;i<f.length;i++){
+    c = f[i];
+    nom = 'GD ' + (c.ruta || '') + ' - ' + (c.quien_pide || c.dueno || c.tienda) + (c.quien_pide || c.dueno ? ' (' + c.tienda + ')' : '');
+    nom = nom.replace(/[\r\n;,]/g, ' ');
+    s += 'BEGIN:VCARD\r\nVERSION:3.0\r\nFN:' + nom + '\r\nN:' + nom + ';;;;\r\nORG:' + String(c.tienda).replace(/[\r\n;,]/g, ' ') +
+         '\r\nTEL;TYPE=CELL:+' + c.whatsapp + '\r\nEND:VCARD\r\n';
+  }
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([s], {type: 'text/vcard;charset=utf-8'}));
+  a.download = 'Clientes GD ' + waQueGrupo().replace(/[^\w\u00c0-\u017f ]+/g, ' ') + '.vcf';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  aviso('mWa', '&#10003; Se bajaron ' + f.length + ' contactos. &Aacute;brelos en tu tel&eacute;fono para guardarlos.', true);
+}
+function waCopiaGeneral(){ copiar(waMsgGeneral(), 'mWa', 'El mensaje'); }
+function waMarcaTodos(){
+  var f = waFiltrados(), env = [], ids = [], ahora = new Date().toISOString(), link = baseApp() + 'pedir.html', msg = waMsgGeneral(), i;
+  for(i=0;i<f.length;i++){
+    if(waHoy(f[i])) continue;
+    env.push({cliente_id: f[i].id, link: link, mensaje: msg});
+    ids.push(f[i].id);
+  }
+  if(!ids.length) return;
+  req('POST', SB + '/rest/v1/gd_clientes_wa_envios', env, true, function(){
+    req('PATCH', SB + '/rest/v1/gd_clientes_wa?id=in.(' + ids.join(',') + ')', {ultimo_envio: ahora}, true,
+      function(){ aviso('mWa', '&#10003; Anotado: ' + ids.length + ' mandados hoy por lista de difusi&oacute;n.', true); cargaWa(); },
+      function(){ aviso('mWa', 'No se pudo anotar.', false); });
+  }, function(st){ if(st === 401){ refresca(waMarcaTodos, salir); return; } aviso('mWa', 'No se pudo anotar (' + st + ').', false); });
 }
 
 /* "Enviar al siguiente": abre el WhatsApp del primero de esa ruta que no se ha mandado hoy. */
