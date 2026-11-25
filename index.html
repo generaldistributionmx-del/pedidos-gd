@@ -7,6 +7,16 @@
 <link rel="icon" href="icono-pedidos-192.png">
 <link rel="apple-touch-icon" href="icono-pedidos-180.png">
 <link rel="manifest" href="app-pedidos.webmanifest">
+<script>
+/* Manuel 25/nov/2026: al anclar el link de clientes en el telefono abria la
+   app de vendedor (ruta, empezar mi dia...). En modo cliente se usa su propio
+   manifiesto, que siempre abre en ?cliente=1. */
+if(/[?&]cliente=1/.test(location.search)){
+  document.querySelector('link[rel=manifest]').href = 'app-clientes.webmanifest';
+  document.title = 'Haz tu pedido · General Distribution';
+  document.write('<meta name="apple-mobile-web-app-title" content="GD Clientes">');
+}
+</script>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="GD Pedidos">
@@ -1022,7 +1032,8 @@ function render(){
     out.push(p);
   }
   shown = out;
-  document.getElementById('count').innerHTML = out.length + (out.length===1 ? ' producto' : ' productos') + (cat ? ' en ' + cat : '') + '<span class="act" id="refrescar">Actualizar</span>';
+  document.getElementById('count').innerHTML = out.length + (out.length===1 ? ' producto' : ' productos') + (cat ? ' en ' + cat : '') + '<span class="act" id="refrescar">Actualizar</span>' +
+    (MODO_CLIENTE ? '' : '<span class="act" id="linkcli" style="margin-right:14px">&#128228; Link para cliente</span>');
   /* Manuel (11/nov/2026): que salgan TODOS, sin tope de 200. El vendedor no
      va a buscar ni sabe como se llaman. Las fotos cargan al ir bajando (lazy). */
   var lim = out.length, h = '';
@@ -1158,6 +1169,14 @@ function texto(){
 document.addEventListener('click', function(e){
   var el = e.target;
   while(el && el !== document.body){
+    if(el.id === 'linkcli'){
+      /* Manuel 25/nov/2026: mandarle al cliente su link de pedidos sin buscarlo. */
+      var url = location.href.split('?')[0].split('#')[0].replace(/index\.html$/, '') + 'pedir.html';
+      var txt = 'Hola, aqui puedes hacer tu pedido de General Distribution: ' + url;
+      if(navigator.share){ navigator.share({title: 'General Distribution', text: txt}).catch(function(){}); }
+      else { window.open('https://wa.me/?text=' + encodeURIComponent(txt), '_blank'); }
+      return;
+    }
     if(el.id === 'refrescar'){
       try { localStorage.removeItem('gd_cat'); } catch(e2){}
       var c2 = document.getElementById('count');

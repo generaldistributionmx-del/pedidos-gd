@@ -1,0 +1,18 @@
+{
+  "id": "./?cliente=1",
+  "name": "GD Haz tu pedido",
+  "short_name": "GD Clientes",
+  "description": "Catalogo de General Distribution para que el cliente haga su pedido",
+  "lang": "es",
+  "start_url": "./?cliente=1",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#1f2937",
+  "icons": [
+    { "src": "icono-pedidos-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icono-pedidos-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icono-pedidos-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
