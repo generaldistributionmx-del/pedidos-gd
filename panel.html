@@ -279,6 +279,7 @@ h2{font-size:14px;text-transform:uppercase;letter-spacing:.5px;color:#6b7280;
     <button class="tab on" data-sec="pedidos">Pedidos</button>
     <button class="tab" data-sec="bodega">Bodega</button>
     <button class="tab" data-sec="tiendas">Tiendas</button>
+    <button class="tab" data-sec="whatsapp">Clientes por WhatsApp</button>
     <button class="tab" data-sec="productos">Productos</button>
     <button class="tab" data-sec="reportes" id="tabReportes" style="display:none">Reportes</button>
     <button class="tab" data-sec="equipo" id="tabEquipo" style="display:none">Equipo</button>
@@ -325,6 +326,44 @@ h2{font-size:14px;text-transform:uppercase;letter-spacing:.5px;color:#6b7280;
         <input id="tRuta"   placeholder="Ruta (Colorado, Utah, Idaho...)" autocomplete="off">
         <input id="tCiudad" placeholder="Ciudad" autocomplete="off">
         <button id="btnTienda">Agregar tienda</button>
+      </div>
+    </div>
+
+    <div class="panel-sec" id="sec-whatsapp">
+      <div class="msg" id="mWa"></div>
+      <h2>Clientes por WhatsApp</h2>
+      <p class="ayuda" style="padding:0 3px;margin-top:-2px">Aqu&iacute; van los clientes que
+        <b>aceptaron</b> recibir el link para hacer su pedido. Toca <b>Enviar</b>: se abre
+        WhatsApp con el mensaje y su link ya escritos, y nom&aacute;s le das enviar.</p>
+      <div id="waFiltros"></div>
+      <div id="waLista"><div class="cargando">Cargando&hellip;</div></div>
+
+      <h2 id="waTitForm">Agregar un cliente</h2>
+      <div class="card">
+        <p class="ayuda">Si la tienda ya est&aacute; en la app, b&uacute;scala y esc&oacute;gela:
+          as&iacute; le llega <b>su propio link</b> (con su nombre y sus precios). Si no, escribe
+          el nombre y le llega el link general.</p>
+        <input id="waBusca" placeholder="Buscar la tienda en la app (opcional)..." autocomplete="off">
+        <div id="waBuscaRes"></div>
+        <input id="waTienda" placeholder="Nombre de la tienda (ej. Garc&iacute;a M&aacute;rquez)" autocomplete="off">
+        <input id="waDueno" placeholder="Due&ntilde;o (ej. Francisco)" autocomplete="off">
+        <input id="waQuien" placeholder="Qui&eacute;n hace el pedido (ej. Margarita)" autocomplete="off">
+        <input id="waTel" placeholder="WhatsApp de quien hace el pedido (ej. 801 555 1234)" autocomplete="off" inputmode="tel">
+        <select id="waRuta" style="width:100%;padding:12px;font-size:16px;border:1px solid #d5d9df;border-radius:8px;margin-bottom:8px"></select>
+        <select id="waDia" style="width:100%;padding:12px;font-size:16px;border:1px solid #d5d9df;border-radius:8px;margin-bottom:8px"></select>
+        <input id="waNota" placeholder="Nota (opcional)" autocomplete="off">
+        <label style="display:block;margin:4px 0 10px;font-size:14px"><input type="checkbox" id="waPrueba" style="width:auto;margin-right:6px">Es de prueba (familia)</label>
+        <button id="waGuardar">Guardar cliente</button>
+        <button id="waCancelar" class="mini" style="display:none">Cancelar cambios</button>
+      </div>
+
+      <h2>El mensaje</h2>
+      <div class="card">
+        <p class="ayuda">Se manda a cada cliente con estos cambios:
+          <b>{quien}</b> = qui&eacute;n hace el pedido, <b>{tienda}</b> = la tienda,
+          <b>{link}</b> = su link para pedir.</p>
+        <textarea id="waMsg" rows="6" style="width:100%;padding:10px;font-size:15px;border:1px solid #d5d9df;border-radius:8px;font-family:inherit"></textarea>
+        <button id="waMsgGuardar">Guardar mensaje</button>
       </div>
     </div>
 
@@ -3172,6 +3211,242 @@ $('camQtyN').onkeydown = function(ev){
 };
 $('camCerrar').onclick = camCierra;
 
+/* ---- clientes por WhatsApp (Manuel, 24/nov/2026) ----
+   Lista de clientes que aceptaron recibir el link de pedido. El boton Enviar abre
+   WhatsApp (wa.me) con el mensaje y el link de la tienda ya escritos: Manuel le da
+   enviar. Nada se manda solo. Cada envio queda en gd_clientes_wa_envios. */
+var WA = [], WAEDIT = '', WATIENDA = null, WAFRUTA = '', WAFDIA = '', WAOTRA = '';
+var WA_RUTAS = ['Colorado','Foránea','Idaho','Logan','Ogden','Provo','Salt Lake City','Prueba'];
+var WA_DIAS = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+var WA_MSG0 = 'Hola {quien} 👋\nYa puede hacer su pedido de esta semana con General Distribution aquí:\n{link}\n\nEscoja sus productos y toque "Enviar mi pedido". ¡Gracias!';
+
+try { WAFRUTA = localStorage.getItem('gd_wafruta') || ''; WAFDIA = localStorage.getItem('gd_wafdia') || ''; } catch(e){}
+
+function waEsc(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function waNum(t){
+  var d = String(t || '').replace(/\D/g, '');
+  if(d.length === 10) d = '1' + d;          /* numero de EE.UU. sin el 1 */
+  return d;
+}
+function waBonito(d){
+  d = String(d || '');
+  if(d.length === 11 && d.charAt(0) === '1') return '(' + d.substr(1,3) + ') ' + d.substr(4,3) + '-' + d.substr(7);
+  return '+' + d;
+}
+function waMensaje(){ var m = ''; try { m = localStorage.getItem('gd_wamsg') || ''; } catch(e){} return m || WA_MSG0; }
+function waLink(c){
+  var cod = c.gd_tiendas && c.gd_tiendas.codigo;
+  return cod ? linkDe(cod) : baseApp() + 'pedir.html';
+}
+function waHoy(c){
+  if(!c.ultimo_envio) return false;
+  var a = new Date(c.ultimo_envio), b = new Date();
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+function waFecha(s){
+  var d = new Date(s), dd = ['dom','lun','mar','mié','jue','vie','sáb'];
+  var h = d.getHours(), m = d.getMinutes();
+  return dd[d.getDay()] + ' ' + d.getDate() + '/' + (d.getMonth()+1) + ' ' + (h<10?'0':'') + h + ':' + (m<10?'0':'') + m;
+}
+
+function waOpciones(){
+  var h = '<option value="">Ruta...</option>', i;
+  for(i=0;i<WA_RUTAS.length;i++) h += '<option>' + WA_RUTAS[i] + '</option>';
+  $('waRuta').innerHTML = h;
+  h = '<option value="">D&iacute;a que se le manda...</option>';
+  for(i=0;i<WA_DIAS.length;i++) h += '<option>' + WA_DIAS[i] + '</option>';
+  $('waDia').innerHTML = h;
+  $('waMsg').value = waMensaje();
+}
+
+function cargaWa(){
+  req('GET', SB + '/rest/v1/gd_clientes_wa?select=*,gd_tiendas(codigo,nombre)&order=ruta.asc,tienda.asc&limit=2000', null, true,
+    function(d){ WA = d || []; pintaWa(); },
+    function(st){
+      if(st === 401){ refresca(cargaWa, salir); return; }
+      $('waLista').innerHTML = '<div class="vacio">No se pudo cargar la lista.</div>';
+    });
+}
+
+function pintaWa(){
+  var sty = 'padding:9px;font-size:15px;border:1px solid #d5d9df;border-radius:8px;margin:0 6px 8px 0;background:#fff';
+  var i, h = '<select id="waFRuta" style="' + sty + (WAFRUTA ? ';border-color:#2563eb;font-weight:700' : '') + '"><option value="">Todas las rutas</option>';
+  for(i=0;i<WA_RUTAS.length;i++) h += '<option' + (WAFRUTA === WA_RUTAS[i] ? ' selected' : '') + '>' + WA_RUTAS[i] + '</option>';
+  h += '</select><select id="waFDia" style="' + sty + (WAFDIA ? ';border-color:#2563eb;font-weight:700' : '') + '"><option value="">Todos los d&iacute;as</option>';
+  for(i=0;i<WA_DIAS.length;i++) h += '<option' + (WAFDIA === WA_DIAS[i] ? ' selected' : '') + '>' + WA_DIAS[i] + '</option>';
+  h += '</select>';
+  $('waFiltros').innerHTML = h;
+  $('waFRuta').onchange = function(){ WAFRUTA = this.value; try{ localStorage.setItem('gd_wafruta', WAFRUTA); }catch(e){} pintaWa(); };
+  $('waFDia').onchange = function(){ WAFDIA = this.value; try{ localStorage.setItem('gd_wafdia', WAFDIA); }catch(e){} pintaWa(); };
+
+  var porRuta = {}, orden = [], c, n = 0;
+  for(i=0;i<WA.length;i++){
+    c = WA[i];
+    if(WAFRUTA && (c.ruta || '') !== WAFRUTA) continue;
+    if(WAFDIA && (c.dia || '') !== WAFDIA) continue;
+    var r = c.ruta || 'Sin ruta';
+    if(!porRuta[r]){ porRuta[r] = []; orden.push(r); }
+    porRuta[r].push(c); n++;
+  }
+  if(!n){
+    $('waLista').innerHTML = '<div class="vacio">' + (WA.length ? 'Nadie con ese filtro.' :
+      'Todav&iacute;a no hay clientes.<br>Agrega el primero abajo.') + '</div>';
+    return;
+  }
+  h = '';
+  var k, j;
+  for(k=0;k<orden.length;k++){
+    var lista = porRuta[orden[k]], pend = 0;
+    for(j=0;j<lista.length;j++) if(lista[j].activo && !waHoy(lista[j])) pend++;
+    h += '<div class="ruta"><span>' + waEsc(orden[k]) + ' &middot; ' + lista.length +
+         (lista.length === 1 ? ' cliente' : ' clientes') + '</span><span class="r">' +
+         (pend ? '<button class="mini p" onclick="waSiguiente(' + k + ')">Enviar al siguiente (' + pend + ' sin mandar hoy)</button>'
+               : '&#10003; Nada pendiente hoy') + '</span></div>';
+    h += '<div class="card">';
+    for(j=0;j<lista.length;j++){
+      c = lista[j];
+      h += '<div class="persona' + (c.activo ? '' : ' apagado') + '" style="display:block">';
+      h += '<div><b>' + waEsc(c.tienda) + '</b>';
+      if(c.es_prueba) h += '<span class="ojo">prueba</span>';
+      if(!c.activo) h += '<span class="ojo">apagado</span>';
+      if(waHoy(c)) h += '<span class="ojo" style="background:#dcfce7;color:#065f2b">&#10003; mandado hoy</span>';
+      h += '</div>';
+      var quien = [];
+      if(c.quien_pide) quien.push('Pide: <b>' + waEsc(c.quien_pide) + '</b>');
+      if(c.dueno) quien.push('Due&ntilde;o: ' + waEsc(c.dueno));
+      if(quien.length) h += '<div class="meta">' + quien.join(' &middot; ') + '</div>';
+      h += '<div class="meta">&#128241; ' + waBonito(c.whatsapp) + (c.dia ? ' &middot; ' + waEsc(c.dia) : '') +
+           (c.ultimo_envio ? ' &middot; &Uacute;ltimo env&iacute;o: ' + waFecha(c.ultimo_envio) : ' &middot; Nunca se le ha mandado') + '</div>';
+      if(c.nota) h += '<div class="meta">' + waEsc(c.nota) + '</div>';
+      h += '<div class="lnk">' + waEsc(waLink(c)) + (c.gd_tiendas ? '' : ' <i>(link general)</i>') + '</div>';
+      if(c.activo) h += '<button class="mini p" onclick="waEnviar(\'' + c.id + '\')">&#128172; Enviar</button>';
+      h += '<button class="mini" onclick="waEditar(\'' + c.id + '\')">Editar</button>';
+      h += '<button class="mini" onclick="waPrende(\'' + c.id + '\',' + (c.activo ? 'false' : 'true') + ')">' + (c.activo ? 'Apagar' : 'Prender') + '</button>';
+      h += '</div>';
+    }
+    h += '</div>';
+  }
+  $('waLista').innerHTML = h;
+  WA_ORDEN = orden; WA_GRUPOS = porRuta;
+}
+var WA_ORDEN = [], WA_GRUPOS = {};
+
+function waBusca(id){ for(var i=0;i<WA.length;i++) if(WA[i].id === id) return WA[i]; return null; }
+
+function waEnviar(id){
+  var c = waBusca(id); if(!c) return;
+  var link = waLink(c);
+  var msg = waMensaje().replace(/\{quien\}/g, c.quien_pide || c.dueno || c.tienda)
+                       .replace(/\{tienda\}/g, c.tienda).replace(/\{link\}/g, link);
+  window.open('https://wa.me/' + c.whatsapp + '?text=' + encodeURIComponent(msg), '_blank');
+  var ahora = new Date().toISOString();
+  c.ultimo_envio = ahora; pintaWa();
+  req('POST', SB + '/rest/v1/gd_clientes_wa_envios', {cliente_id: c.id, link: link, mensaje: msg}, true, function(){}, function(){});
+  req('PATCH', SB + '/rest/v1/gd_clientes_wa?id=eq.' + c.id, {ultimo_envio: ahora}, true, function(){},
+    function(){ aviso('mWa', 'Se abri&oacute; WhatsApp pero no se pudo anotar el env&iacute;o.', false); });
+}
+
+/* "Enviar al siguiente": abre el WhatsApp del primero de esa ruta que no se ha mandado hoy. */
+function waSiguiente(k){
+  var lista = WA_GRUPOS[WA_ORDEN[k]] || [], i;
+  for(i=0;i<lista.length;i++){
+    if(lista[i].activo && !waHoy(lista[i])){ waEnviar(lista[i].id); return; }
+  }
+}
+
+function waPrende(id, val){
+  req('PATCH', SB + '/rest/v1/gd_clientes_wa?id=eq.' + id, {activo: val}, true, cargaWa,
+    function(st){ if(st === 401){ refresca(function(){ waPrende(id, val); }, salir); return; }
+      aviso('mWa', 'No se pudo cambiar.', false); });
+}
+
+function waLimpia(){
+  WAEDIT = ''; WATIENDA = null; WAOTRA = '';
+  var f = ['waBusca','waTienda','waDueno','waQuien','waTel','waNota'], i;
+  for(i=0;i<f.length;i++) $(f[i]).value = '';
+  $('waRuta').value = ''; $('waDia').value = ''; $('waPrueba').checked = false;
+  $('waBuscaRes').innerHTML = '';
+  $('waTitForm').innerHTML = 'Agregar un cliente';
+  $('waGuardar').innerHTML = 'Guardar cliente';
+  $('waCancelar').style.display = 'none';
+}
+
+function waAmarrado(n){
+  return '<div class="meta" style="margin:-2px 0 8px">&#10003; Amarrado a la tienda <b>' + waEsc(n) +
+         '</b> &middot; <a href="#" onclick="waSuelta();return false">quitar</a></div>';
+}
+
+function waEditar(id){
+  var c = waBusca(id); if(!c) return;
+  WAEDIT = id; WAOTRA = '';
+  WATIENDA = c.tienda_id ? {id: c.tienda_id, nombre: c.gd_tiendas ? c.gd_tiendas.nombre : c.tienda} : null;
+  $('waTienda').value = c.tienda || ''; $('waDueno').value = c.dueno || ''; $('waQuien').value = c.quien_pide || '';
+  $('waTel').value = waBonito(c.whatsapp); $('waNota').value = c.nota || '';
+  $('waRuta').value = c.ruta || ''; $('waDia').value = c.dia || ''; $('waPrueba').checked = !!c.es_prueba;
+  $('waBusca').value = '';
+  $('waBuscaRes').innerHTML = WATIENDA ? waAmarrado(WATIENDA.nombre) : '';
+  $('waTitForm').innerHTML = 'Cambiar a ' + waEsc(c.tienda);
+  $('waGuardar').innerHTML = 'Guardar cambios';
+  $('waCancelar').style.display = 'inline-block';
+  $('waTitForm').scrollIntoView();
+}
+
+function waSuelta(){ WATIENDA = null; $('waBuscaRes').innerHTML = ''; }
+
+var WABT = null, WAENC = [];
+function waBuscaTienda(){
+  clearTimeout(WABT);
+  WABT = setTimeout(function(){
+    var q = $('waBusca').value.trim();
+    if(q.length < 2){ if(!WATIENDA) $('waBuscaRes').innerHTML = ''; return; }
+    var e = encodeURIComponent('%' + q + '%');
+    req('GET', SB + '/rest/v1/gd_tiendas?select=id,nombre,ciudad,estado&or=(nombre.ilike.' + e + ',ciudad.ilike.' + e + ')&order=nombre.asc&limit=8', null, true,
+      function(d){
+        WAENC = d || [];
+        var h = '', i;
+        for(i=0;i<WAENC.length;i++){
+          h += '<div class="persona" style="display:block;cursor:pointer" onclick="waEscoge(' + i + ')">' +
+               '<b>' + waEsc(WAENC[i].nombre) + '</b><div class="meta">' + waEsc(WAENC[i].ciudad || '') +
+               (WAENC[i].estado ? ', ' + waEsc(WAENC[i].estado) : '') + '</div></div>';
+        }
+        $('waBuscaRes').innerHTML = h || '<div class="meta" style="margin:-2px 0 8px">Ninguna tienda con eso. Escribe el nombre abajo.</div>';
+      }, function(st){ if(st === 401) refresca(waBuscaTienda, salir); });
+  }, 250);
+}
+
+function waEscoge(i){
+  var t = WAENC[i]; if(!t) return;
+  WATIENDA = {id: t.id, nombre: t.nombre};
+  if(!$('waTienda').value) $('waTienda').value = t.nombre;
+  $('waBusca').value = '';
+  $('waBuscaRes').innerHTML = waAmarrado(t.nombre);
+}
+
+function waGuarda(){
+  var t = $('waTienda').value.trim(), tel = waNum($('waTel').value), i;
+  if(!t){ aviso('mWa', 'Falta el nombre de la tienda.', false); $('waTienda').focus(); return; }
+  if(tel.length < 11 || tel.length > 15){
+    aviso('mWa', 'El WhatsApp no se ve bien. Escr&iacute;belo con lada, por ejemplo <b>801 555 1234</b>. Si es de M&eacute;xico, con <b>52</b> adelante.', false);
+    $('waTel').focus(); return;
+  }
+  if(!$('waRuta').value){ aviso('mWa', 'Escoge la ruta.', false); return; }
+  for(i=0;i<WA.length;i++){
+    if(WA[i].whatsapp === tel && WA[i].id !== WAEDIT && WAOTRA !== tel){
+      WAOTRA = tel;
+      aviso('mWa', 'Ese WhatsApp ya est&aacute; con <b>' + waEsc(WA[i].tienda) + '</b>. Si es otra tienda de la misma persona, ' +
+                   'est&aacute; bien: toca <b>Guardar</b> otra vez.', false);
+      return;
+    }
+  }
+  var cuerpo = {tienda: t, dueno: $('waDueno').value.trim() || null, quien_pide: $('waQuien').value.trim() || null,
+    whatsapp: tel, ruta: $('waRuta').value, dia: $('waDia').value || null, nota: $('waNota').value.trim() || null,
+    es_prueba: $('waPrueba').checked, tienda_id: WATIENDA ? WATIENDA.id : null};
+  var ok = function(){ aviso('mWa', '&#10003; Guardado: <b>' + waEsc(t) + '</b>.', true); waLimpia(); cargaWa(); window.scrollTo(0,0); };
+  var mal = function(st){ if(st === 401){ refresca(waGuarda, salir); return; } aviso('mWa', 'No se pudo guardar (' + st + ').', false); };
+  if(WAEDIT) req('PATCH', SB + '/rest/v1/gd_clientes_wa?id=eq.' + WAEDIT, cuerpo, true, ok, mal);
+  else req('POST', SB + '/rest/v1/gd_clientes_wa', cuerpo, true, ok, mal);
+}
+
 /* ---- eventos ---- */
 document.addEventListener('click', function(e){
   var el = e.target;
@@ -3198,6 +3473,7 @@ document.addEventListener('click', function(e){
         if(sec === 'bodega')    cargaBodega();
         if(sec === 'reportes')  cargaReportes();
         if(sec === 'tiendas')   cargaTiendas();
+        if(sec === 'whatsapp')  cargaWa();
         if(sec === 'productos'){ pchips(); cargaProductos(); }
         window.scrollTo(0,0);
         return;
@@ -3308,6 +3584,14 @@ var pqEl = $('pq');
 function pqBusca(){ clearTimeout(PTIMER); PTIMER = setTimeout(cargaProductos, 250); }
 pqEl.onkeyup = pqBusca; pqEl.oninput = pqBusca; pqEl.onchange = pqBusca;
 $('btnClave').onclick = cambiaClave;
+waOpciones();
+$('waGuardar').onclick = waGuarda;
+$('waCancelar').onclick = waLimpia;
+var wabEl = $('waBusca'); wabEl.onkeyup = waBuscaTienda; wabEl.oninput = waBuscaTienda; wabEl.onchange = waBuscaTienda;
+$('waMsgGuardar').onclick = function(){
+  try { localStorage.setItem('gd_wamsg', $('waMsg').value); aviso('mWa', '&#10003; Mensaje guardado en esta computadora.', true); }
+  catch(e){ aviso('mWa', 'No se pudo guardar el mensaje.', false); }
+};
 
 $('entrar').onclick = function(){
   var e = $('email').value, p = $('pass').value;
