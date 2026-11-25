@@ -652,18 +652,30 @@ language sql stable security definer set search_path = public as $$
     select id from public.gd_tiendas
      where activo and lower(codigo) = lower(trim(p_codigo))
   ),
-  -- 2. lo ultimo que de verdad se le cobro
-  historico as (
-    select distinct on (pr.id) pr.id as producto_id, l.precio
+  -- 2. lo ultimo que de verdad se le cobro.
+  -- 25/nov/2026: antes era UN join con "id = id OR nombre = nombre". Con el OR,
+  -- Postgres comparaba cada renglon contra todo el catalogo: las tiendas con
+  -- muchos pedidos pasaban de 3 s, la base cortaba (57014) y la app les cobraba
+  -- precio general sin avisar. Ahora son dos joins; comprobado en 7 tiendas que
+  -- da exactamente lo mismo (0 diferencias) y tarda ~0.1 s.
+  lineas as materialized (
+    select l.producto_id, gd_norm(l.producto) as n, l.precio, d.creado
       from t
       join public.gd_pedidos d   on d.tienda_id = t.id
                                 and d.estado is distinct from 'cancelado'
                                 and not coalesce(d.es_prueba, false)
       join public.gd_pedido_lineas l on l.pedido_id = d.id
-      join public.gd_productos pr on pr.id::text = l.producto_id
-                                  or gd_norm(pr.nombre) = gd_norm(l.producto)
-     where pr.activo
-     order by pr.id, d.creado desc
+  ),
+  prods as materialized (
+    select pr.id, gd_norm(pr.nombre) as n from public.gd_productos pr where pr.activo
+  ),
+  m as (
+    select pr.id, li.precio, li.creado from lineas li join prods pr on pr.id::text = li.producto_id
+    union all
+    select pr.id, li.precio, li.creado from lineas li join prods pr on pr.n = li.n
+  ),
+  historico as (
+    select distinct on (id) id as producto_id, precio from m order by id, creado desc
   ),
   -- 1. lo que el dueno le puso a proposito (manda sobre lo anterior)
   puesto as (
@@ -1359,3 +1371,69 @@ alter table public.gd_vendedor_eventos drop constraint if exists gd_vendedor_eve
 alter table public.gd_vendedor_eventos add constraint gd_vendedor_eventos_tipo_check
   check (tipo in ('empieza','visita','termina','pedido','ping'));
 create index if not exists gd_vend_ev_usuario_idx on public.gd_vendedor_eventos (usuario_id, creado);
+
+-- ============================================================
+--  CLIENTES POR WHATSAPP (Manuel, 24-25/nov/2026)
+--  Los clientes que aceptaron recibir el link de pedido cada semana.
+--  El panel abre WhatsApp (wa.me) con el mensaje y el link: nada se manda solo.
+--  Sin politica de DELETE: se apagan con activo = false.
+-- ============================================================
+create table if not exists public.gd_clientes_wa (
+  id uuid primary key default gen_random_uuid(),
+  tienda_id uuid references public.gd_tiendas(id),
+  tienda text not null,
+  dueno text,
+  quien_pide text,
+  whatsapp text not null,          -- solo digitos, con lada de pais (1 EE.UU., 52 Mexico)
+  ruta text,
+  dia text,
+  nota text,
+  activo boolean not null default true,
+  es_prueba boolean not null default false,
+  ultimo_envio timestamptz,
+  creado timestamptz not null default now(),
+  creado_por uuid default auth.uid()
+);
+create table if not exists public.gd_clientes_wa_envios (
+  id bigserial primary key,
+  cliente_id uuid not null references public.gd_clientes_wa(id),
+  enviado timestamptz not null default now(),
+  por uuid default auth.uid(),
+  link text,
+  mensaje text
+);
+alter table public.gd_clientes_wa enable row level security;
+alter table public.gd_clientes_wa_envios enable row level security;
+drop policy if exists gd_clientes_wa_lee on public.gd_clientes_wa;
+create policy gd_clientes_wa_lee on public.gd_clientes_wa for select to authenticated using (public.gd_es_oficina());
+drop policy if exists gd_clientes_wa_pone on public.gd_clientes_wa;
+create policy gd_clientes_wa_pone on public.gd_clientes_wa for insert to authenticated with check (public.gd_es_oficina());
+drop policy if exists gd_clientes_wa_cambia on public.gd_clientes_wa;
+create policy gd_clientes_wa_cambia on public.gd_clientes_wa for update to authenticated
+  using (public.gd_es_oficina()) with check (public.gd_es_oficina());
+drop policy if exists gd_clientes_wa_env_lee on public.gd_clientes_wa_envios;
+create policy gd_clientes_wa_env_lee on public.gd_clientes_wa_envios for select to authenticated using (public.gd_es_oficina());
+drop policy if exists gd_clientes_wa_env_pone on public.gd_clientes_wa_envios;
+create policy gd_clientes_wa_env_pone on public.gd_clientes_wa_envios for insert to authenticated with check (public.gd_es_oficina());
+grant select, insert, update on public.gd_clientes_wa to authenticated;
+grant select, insert on public.gd_clientes_wa_envios to authenticated;
+grant usage on sequence public.gd_clientes_wa_envios_id_seq to authenticated;
+
+-- El link general (pedir.html) reconoce al cliente por su WhatsApp o por el
+-- codigo de su tienda. Sin sesion. Solo devuelve UN cliente activo y nada de su
+-- telefono, dueno ni quien pide.
+create or replace function public.gd_cliente_wa_busca(p_tel text default null, p_codigo text default null)
+returns table(tienda_id uuid, codigo text, tienda text, ruta text, es_prueba boolean)
+language sql stable security definer set search_path to 'public' as $f$
+  select c.tienda_id, t.codigo, coalesce(t.nombre, c.tienda), c.ruta, c.es_prueba
+  from public.gd_clientes_wa c
+  left join public.gd_tiendas t on t.id = c.tienda_id
+  where c.activo
+    and ( (length(regexp_replace(coalesce(p_tel,''),'\D','','g')) >= 10
+           and right(c.whatsapp,10) = right(regexp_replace(p_tel,'\D','','g'),10))
+       or (coalesce(trim(p_codigo),'') <> '' and lower(t.codigo) = lower(trim(p_codigo))) )
+  order by c.creado desc
+  limit 1;
+$f$;
+revoke all on function public.gd_cliente_wa_busca(text,text) from public;
+grant execute on function public.gd_cliente_wa_busca(text,text) to anon, authenticated;
